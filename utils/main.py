@@ -28,6 +28,11 @@ import uuid
 from argparse import ArgumentParser, Namespace
 import torch
 
+
+import warnings
+warnings.filterwarnings("ignore", message=".*A newer version of deeplake.*")
+
+
 mammoth_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(mammoth_path)
 sys.path.append(mammoth_path + '/datasets')

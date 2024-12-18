@@ -57,7 +57,7 @@ class CGIL(FutureModel):
 
     def end_task(self, dataset: ContinualDataset) -> None:
 
-        self.net.prompter.update_statistics(dataset)
+        #self.net.prompter.update_statistics(dataset)
 
         self.net.prompter.align()
 

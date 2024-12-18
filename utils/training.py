@@ -150,6 +150,8 @@ def _to_device(name: str, x, device):
     return x
 
 
+
+
 def train_single_epoch(model: ContinualModel,
                        train_loader: Iterable,
                        args: Namespace,
@@ -343,8 +345,9 @@ def train(model: ContinualModel, dataset: ContinualDataset,
 
                     model.begin_epoch(epoch, dataset)
 
+
                     train_single_epoch(model, train_loader, args, current_task=t, epoch=epoch,
-                                       system_tracker=system_tracker, data_len=data_len, scheduler=scheduler)
+                                    system_tracker=system_tracker, data_len=data_len, scheduler=scheduler)
 
                     model.end_epoch(epoch, dataset)
 
