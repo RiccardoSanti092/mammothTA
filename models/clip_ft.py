@@ -31,15 +31,16 @@ from utils.args import ArgumentParser
 from utils.conf import get_device
 from copy import deepcopy
 from torch import optim
-
+from torch import func
 
 
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
     params = []
     for name, param in net.named_parameters():
-        if "head" in name and classifier:
-            assert (offset_1 > -1 and offset_2 > -1)
-            params.append(param[offset_1:offset_2].view(-1))
+        if "head" in name:
+            if classifier:
+                assert (offset_1 > -1 and offset_2 > -1)
+                params.append(param[offset_1:offset_2].view(-1))
         elif features:
             params.append(param.view(-1))
 
@@ -49,16 +50,16 @@ def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -
         return torch.tensor([0.])
 
 
-def set_params(net, new_params: torch.Tensor, features=True, classifier=False, offset_1=-1, offset_2=-1, ignore_classifier=False) -> None:
+def set_params(net, new_params: torch.Tensor, features=True, classifier=False, offset_1=-1, offset_2=-1) -> None:
     progress = 0
     for name, param in net.named_parameters():
-        if "head" in name and classifier:
-            if not ignore_classifier:
+        if "head" in name:
+            if classifier:
                 assert (offset_1 > -1 and offset_2 > -1)
                 cur_size = torch.tensor(param.data[offset_1:offset_2].size()).prod()
                 param.data[offset_1:offset_2] = new_params[progress: progress + cur_size].view(
                     param.data[offset_1:offset_2].size())
-            progress += cur_size
+                progress += cur_size
         elif features:
             cur_size = torch.tensor(param.size()).prod()
             cand_params = new_params[progress: progress + cur_size].view(param.size())
@@ -66,19 +67,59 @@ def set_params(net, new_params: torch.Tensor, features=True, classifier=False, o
             progress += cur_size
 
 
+def get_delta_w_backbone(named_params, delta_w, delta_w_names, peft_type, device, vera_B=None, vera_A=None, vera_r=None):
+    params = []
+    for name, param in named_params():
+        if "head" not in name:
+            if name in delta_w_names:
+                index = delta_w_names.index(name)
+                if peft_type == "lora":
+                    cur_delta_w = delta_w[index][0] @ delta_w[index][1]
+                elif peft_type == "ia3":
+                    cur_delta_w = delta_w[index] * param.data
+                elif peft_type == "full":
+                    cur_delta_w = delta_w[index]
+                elif peft_type == "vera":
+                    cur_delta_w = (delta_w[index][0] * vera_B[:param.shape[0], :vera_r]) @ (delta_w[index][1] * vera_A[:vera_r, :param.shape[1]])
+                params.append(cur_delta_w.view(-1).to(device))
+            else:
+                params.append(torch.zeros_like(param).view(-1).to(device))
+
+    if len(params):
+        return torch.cat(params)
+    else:
+        return torch.tensor([0.]).to(device)
+
+
+def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, peft_type, device, vera_B=None, vera_A=None, vera_r=None):
+    params = []
+    for name, param in named_params():
+        if name in delta_w_names:
+            index = delta_w_names.index(name)
+            if peft_type == "lora":
+                cur_delta_w = delta_w[index][0] @ delta_w[index][1]
+            elif peft_type == "ia3":
+                cur_delta_w = delta_w[index] * param.data
+            elif peft_type == "full":
+                cur_delta_w = delta_w[index]
+            elif peft_type == "vera":
+                cur_delta_w = (delta_w[index][0] * vera_B[:param.shape[0], :vera_r]) @ (delta_w[index][1] * vera_A[:vera_r, :param.shape[1]])
+            params.append(cur_delta_w.to(device))
+        else:
+            params.append(torch.zeros_like(param).to(device))
+
+    return params
+
+
 class FinalModel(nn.Module):
     @torch.no_grad()
     def __init__(self, clip_model, dataset: ContinualDataset, args) -> None:
         super().__init__()
         self.dataset = dataset
-        self.visual_encoder_0 = deepcopy(clip_model.visual)
-        self.visual_encoder_final = deepcopy(clip_model.visual)
-        set_params(self.visual_encoder_final, torch.zeros_like(get_params(self.visual_encoder_final)))
+        self.visual_encoder = deepcopy(clip_model.visual)
         self.dtype = clip_model.dtype
         self.args = args
 
-        self.register_buffer('delta_w_params_history',
-                             torch.zeros((dataset.N_TASKS, *get_params(self.final_net).shape)))
 
         self.classes = self.dataset.get_class_names()
         self.register_buffer("text_features", self.compute_text_embeddings(clip_model, self.classes))
@@ -104,7 +145,12 @@ class FinalModel(nn.Module):
         text_features /= text_features.norm(dim=-1, keepdim=True)
         return text_features.cpu()
 
-    def forward(self, x, idx_classes=None):  #TODO: modificare visual_encoder
+    def forward(self, x, idx_classes=None):
+        image_features = self.visual_encoder(x.type(self.dtype))
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        return image_features
+
+    def forward_old(self, x, idx_classes=None):
         image_features = self.visual_encoder(x.type(self.dtype))
         text_features = self.text_features
 
@@ -142,11 +188,18 @@ class CLIP(ContinualModel):
 
         self.net = FinalModel(backbone, dataset, args)
 
+        self.param_names = [name for name, _ in self.net.named_parameters()]
+
+        for name, param in self.net.named_parameters():
+            param.requires_grad = False
+
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+
         self.clip_transform = clip_transform
 
         self.predictions = []
         self.original_labels = []
-        print(self.NAME)
+        self.task_vector_list = []
 
     def begin_task(self, dataset):
 
@@ -156,9 +209,21 @@ class CLIP(ContinualModel):
         if self.current_task != 0:
             self.net.task_id += 1
 
-        self.train()
-        self.opt = optim.SGD(self.net.parameters(), lr=self.args.lr,
+        # PREPARAZIONE PARAMETRI PER TMC   passa dati all'optim
+        self.delta_w = []
+        self.task_vector = deepcopy(self.net)
+        for name, param in self.task_vector.named_parameters():
+            param.requires_grad = True
+            self.delta_w.append(param)
+            self.params_optimizer = self.delta_w
+
+
+
+        self.opt = optim.SGD(self.params_optimizer, lr=self.args.lr,
                              momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
+        del self.delta_w, self.task_vector
+
+        self.train()
 
     def end_task(self, dataset: ContinualDataset) -> None:
         if self.args.save_predictions:
@@ -168,19 +233,62 @@ class CLIP(ContinualModel):
             print(f"Predictions saved for task {self.current_task} in 'predictions_{self.args.dataset}_{self.current_task}.pt'")
             self.predictions = []
             self.original_labels = []
+
+        task_vector_dict = {name: param_finetuned - param_pretrained
+                            for ((name, param_pretrained), (param_finetuned))
+                            in zip(self.net.named_parameters(), self.params_optimizer)}
+
+        self.task_vector_list.append(task_vector_dict)
+        self.merged_parames = {}
+        for task_vector in self.task_vector_list:
+            for key, tensor in task_vector.items():
+                if key in self.merged_parames:
+                    self.merged_parames[key] += tensor
+                else:
+                    self.merged_parames[key] = tensor.clone()
+
+        if self.current_task > 0:
+            print("Averaging task vectors")
+            for key, tensor in self.merged_parames.items():
+                tensor /= (self.current_task + 1)
+
+        for name, param in self.net.named_parameters():
+            if name in self.merged_parames:
+                self.merged_parames[name] += param.data
+            else:
+                self.merged_parames[name] = param.data.clone()
+
         return super().end_task(dataset)
 
-    def observe(self, inputs, labels, not_aug_inputs, epoch=None, **kwargs):
+    def observe(self, inputs, labels, not_aug_inputs, epoch = None):
 
         self.opt.zero_grad()
-        outputs = self.net(inputs, torch.unique(labels).tolist())
-        loss = self.loss(outputs, (labels % 2))
+        param = {name: param for name, param in zip(self.param_names, self.params_optimizer)}
+        image_features = func.functional_call(self.net, param, inputs)
+        text_features = self.net.text_features[torch.unique(labels).tolist()]
+        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
+        loss = self.loss(similarity, (labels % 2))
         loss.backward()
         self.opt.step()
 
         return loss.item()
 
+    def observe_old(self, inputs, labels, not_aug_inputs, epoch=None, **kwargs):
+
+        outputs = self.net(inputs, torch.unique(labels).tolist())
+        loss = self.loss(outputs, (labels % 2))
+        loss.backward()
+        self.opt.step()
+
+
     @torch.no_grad()
     def forward(self, x):
+        #param = {name: param for name, param in zip(self.param_names, self.params_optimizer)}
+        image_features = func.functional_call(self.net, self.merged_parames, x)
+        similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
+        return similarity[:, :self.n_seen_classes]
+
+    @torch.no_grad()
+    def forward_old(self, x):
         return self.net(x)[:, :self.n_seen_classes]
 
