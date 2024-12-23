@@ -15,6 +15,7 @@ Requires:
     * ViT-L/14: "https://openaipublic.azureedge.net/clip/models/b8cca3fd41ae0c99ba7e8951adf17d267cdb84cd88be6f7c2e0eca1737a03836/ViT-L-14.pt"
     * ViT-L/14@336px: "https://openaipublic.azureedge.net/clip/models/3035c92b350959924f9f00213499208652fc7ea050643e8b385c2dac08641f02/ViT-L-14-336px.pt"
 """
+import random
 
 import torch
 import torch.nn as nn
@@ -32,6 +33,8 @@ from utils.conf import get_device
 from copy import deepcopy
 from torch import optim
 from torch import func
+from typing import Iterable, Tuple
+from tqdm import tqdm
 
 
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
@@ -178,6 +181,14 @@ class CLIP(ContinualModel):
                             help='Whether to save predictions of the TRAINING set after each task')
         parser.add_argument('--use_templates', type=binary_to_boolean_type, default=0,
                             help='Whether to use prompt templates for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
+        parser.add_argument('--ft_linears', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune linear layers')
+        parser.add_argument('--ft_attention', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune attention layers')
+        parser.add_argument('--ft_ln', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune layer norm')
+        parser.add_argument('--ft_class_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune class embedding layers')
+        parser.add_argument('--ft_pos_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune posistional embedding')
+        parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune projection layers')
+        parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune convolutional layers')
+
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
@@ -209,11 +220,26 @@ class CLIP(ContinualModel):
         if self.current_task != 0:
             self.net.task_id += 1
 
-        # PREPARAZIONE PARAMETRI PER TMC   passa dati all'optim
+        #TODO: qua dovró mettere una roba tramite argomenti che faccia del bello
         self.delta_w = []
         self.task_vector = deepcopy(self.net)
         for name, param in self.task_vector.named_parameters():
-            param.requires_grad = True
+            if self.args.ft_linears == 1 and "mlp" in name:
+                param.requires_grad = True
+            elif self.args.ft_attention == 1 and "attn" in name:
+                param.requires_grad = True
+            elif self.args.ft_class_embed == 1 and "class_embed" in name:
+                param.requires_grad = True
+            elif self.args.ft_conv == 1 and "conv" in name:
+                param.requires_grad = True
+            elif self.args.ft_ln == 1 and "ln" in name:
+                param.requires_grad = True
+            elif self.args.ft_pos_embed == 1 and "positional_embedding" in name:
+                param.requires_grad = True
+            elif self.args.ft_proj == 1 and "proj" in name:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
             self.delta_w.append(param)
             self.params_optimizer = self.delta_w
 
@@ -239,6 +265,26 @@ class CLIP(ContinualModel):
                             in zip(self.net.named_parameters(), self.params_optimizer)}
 
         self.task_vector_list.append(task_vector_dict)
+
+        '''
+        if self.current_task > 0:
+            task = random.randint(0, self.current_task + 1)
+            self.test_task_vector = deepcopy(self.task_vector_list[task])
+            for name, param in self.net.named_parameters():
+                if name in self.test_task_vector:
+                    self.test_task_vector[name] += param.data
+                else:
+                    self.test_task_vector[name] = param.data.clone()
+
+
+            print("Evaluation con task singola casuale.\n")
+            accs = self.check_correctnes(dataset)
+            print(accs)
+        
+
+            del self.test_task_vector
+            '''
+
         self.merged_parames = {}
         for task_vector in self.task_vector_list:
             for key, tensor in task_vector.items():
@@ -246,6 +292,8 @@ class CLIP(ContinualModel):
                     self.merged_parames[key] += tensor
                 else:
                     self.merged_parames[key] = tensor.clone()
+
+        #TODO: implementa il merging di Peet che é piú elegante a scrittura
 
         if self.current_task > 0:
             print("Averaging task vectors")
@@ -280,11 +328,13 @@ class CLIP(ContinualModel):
         loss.backward()
         self.opt.step()
 
-
     @torch.no_grad()
-    def forward(self, x):
+    def forward(self, x, correctness: bool = False):#TODO: passa una booleana che in base a quello usa i parametri giusti
         #param = {name: param for name, param in zip(self.param_names, self.params_optimizer)}
-        image_features = func.functional_call(self.net, self.merged_parames, x)
+        if not correctness:
+            image_features = func.functional_call(self.net, self.merged_parames, x)
+        else:
+            image_features = func.functional_call(self.net, self.merged_parames, x)
         similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
@@ -292,3 +342,74 @@ class CLIP(ContinualModel):
     def forward_old(self, x):
         return self.net(x)[:, :self.n_seen_classes]
 
+    def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> None:
+        """
+        Given the output tensor, the dataset at hand and the current task,
+        masks the former by setting the responses for the other tasks at -inf.
+        It is used to obtain the results for the task-il setting.
+
+        Args:
+            outputs: the output tensor
+            dataset: the continual dataset
+            k: the task index
+        """
+        num_classes = dataset.N_CLASSES
+        start_c, end_c = dataset.get_offsets(k)
+        outputs[:, :start_c] = -float('inf')
+        outputs[:, end_c:num_classes] = -float('inf')
+
+
+    def check_correctnes(self, dataset: ContinualDataset, last=False, return_loss=False) -> Tuple[list, list]:
+
+        status = self.net.training
+        self.net.eval()
+        accs, accs_mask_classes = [], []
+        n_classes = dataset.get_offsets()[1]
+        loss_fn = dataset.get_loss()
+        avg_loss = 0
+        total_len = sum(len(x) for x in dataset.test_loaders) if hasattr(dataset.test_loaders[0], '__len__') else None
+
+        pbar = tqdm(dataset.test_loaders, total=total_len, desc='Evaluating', disable=self.args.non_verbose)
+        for k, test_loader in enumerate(dataset.test_loaders):
+            if last and k < len(dataset.test_loaders) - 1:
+                continue
+            correct, correct_mask_classes, total = 0.0, 0.0, 0.0
+            test_iter = iter(test_loader)
+            i = 0
+            while True:
+                try:
+                    data = next(test_iter)
+                except StopIteration:
+                    break
+                if self.args.debug_mode and i > self.get_debug_iters():
+                    break
+                inputs, labels = data[0], data[1]
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
+                outputs = self(inputs)
+
+                if return_loss:
+                    loss = loss_fn(outputs, labels)
+                    avg_loss += loss.item()
+
+                _, pred = torch.max(outputs[:, :n_classes].data, 1)
+                correct += torch.sum(pred == labels).item()
+                total += labels.shape[0]
+                i += 1
+                pbar.set_postfix({f'acc_task_{k + 1}': max(0, correct / total * 100)}, refresh=False)
+                pbar.set_description(f"Evaluating Task {k + 1}", refresh=False)
+                pbar.update(1)
+
+                if dataset.SETTING == 'class-il':
+                    self.mask_classes(outputs, dataset, k)
+                    _, pred = torch.max(outputs.data, 1)
+                    correct_mask_classes += torch.sum(pred == labels).item()
+
+            accs.append(correct / total * 100
+                        if 'class-il' in self.COMPATIBILITY or 'general-continual' in self.COMPATIBILITY else 0)
+            accs_mask_classes.append(correct_mask_classes / total * 100)
+        pbar.close()
+
+        self.net.train(status)
+        if return_loss:
+            return accs, accs_mask_classes, avg_loss / total
+        return accs, accs_mask_classes
