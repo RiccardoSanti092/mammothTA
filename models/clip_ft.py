@@ -210,7 +210,27 @@ class CLIP(ContinualModel):
 
         self.predictions = []
         self.original_labels = []
-        self.task_vector_list = []
+
+
+        print("Updating the following layers:")
+        if self.args.ft_linears:
+            print("- linears")
+        if self.args.ft_attention:
+            print("- attention")
+        if self.args.ft_class_embed:
+            print("- class embeddings")
+        if self.args.ft_conv:
+            print("- convolutional")
+        if self.args.ft_ln:
+            print("- layer norm")
+        if self.args.ft_pos_embed:
+            print("- positional embedding")
+        if self.args.ft_proj:
+            print("- projection")
+
+
+    def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
+        torch.cuda.empty_cache()
 
     def begin_task(self, dataset):
 
@@ -220,28 +240,27 @@ class CLIP(ContinualModel):
         if self.current_task != 0:
             self.net.task_id += 1
 
-        #TODO: qua dovró mettere una roba tramite argomenti che faccia del bello
         self.delta_w = []
         self.task_vector = deepcopy(self.net)
         for name, param in self.task_vector.named_parameters():
-            if self.args.ft_linears == 1 and "mlp" in name:
+            if self.args.ft_linears and "mlp" in name:
                 param.requires_grad = True
-            elif self.args.ft_attention == 1 and "attn" in name:
+            elif self.args.ft_attention and "attn" in name:
                 param.requires_grad = True
-            elif self.args.ft_class_embed == 1 and "class_embed" in name:
+            elif self.args.ft_class_embed and "class_embed" in name:
                 param.requires_grad = True
-            elif self.args.ft_conv == 1 and "conv" in name:
+            elif self.args.ft_conv and "conv" in name:
                 param.requires_grad = True
-            elif self.args.ft_ln == 1 and "ln" in name:
+            elif self.args.ft_ln and "ln" in name:
                 param.requires_grad = True
-            elif self.args.ft_pos_embed == 1 and "positional_embedding" in name:
+            elif self.args.ft_pos_embed and "positional_embedding" in name:
                 param.requires_grad = True
-            elif self.args.ft_proj == 1 and "proj" in name:
+            elif self.args.ft_proj and "proj" in name:
                 param.requires_grad = True
             else:
                 param.requires_grad = False
             self.delta_w.append(param)
-            self.params_optimizer = self.delta_w
+        self.params_optimizer = self.delta_w
 
 
 
@@ -252,6 +271,8 @@ class CLIP(ContinualModel):
         self.train()
 
     def end_task(self, dataset: ContinualDataset) -> None:
+        print("Current task:")
+        print(self.current_task)
         if self.args.save_predictions:
             self.predictions = torch.cat(self.predictions, dim=0).cpu()
             self.original_labels = torch.cat(self.original_labels, dim=0).cpu()
@@ -264,11 +285,18 @@ class CLIP(ContinualModel):
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(self.net.named_parameters(), self.params_optimizer)}
 
-        self.task_vector_list.append(task_vector_dict)
+        torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
+
+
+        #TODO: check why task vectors remain on CUDA gaurdando tmc_peft
+
+        ##########################################################################################
+        ##########################################################################################
         '''
         if self.current_task > 0:
-            task = random.randint(0, self.current_task + 1)
+            task = random.randint(0, self.current_task)
+            print(f"Testing task {task}")
             self.test_task_vector = deepcopy(self.task_vector_list[task])
             for name, param in self.net.named_parameters():
                 if name in self.test_task_vector:
@@ -277,14 +305,29 @@ class CLIP(ContinualModel):
                     self.test_task_vector[name] = param.data.clone()
 
 
-            print("Evaluation con task singola casuale.\n")
+            print("Evaluation con task singolo casuale.\n")
             accs = self.check_correctnes(dataset)
             print(accs)
         
 
             del self.test_task_vector
-            '''
+        '''
+        ##########################################################################################
+        ##########################################################################################
 
+
+        if self.current_task > 0:
+            for key in self.merged_params:
+                self.merged_params[key] *= self.current_task
+                self.merged_params[key] += task_vector_dict[key]
+                self.merged_params[key] /= (self.current_task) + 1
+            print("Media parametri aggiornata.")
+        else:
+            self.merged_params = task_vector_dict
+            print("Media parametri aggiornata.")
+
+        del task_vector_dict, self.opt,
+        '''
         self.merged_parames = {}
         for task_vector in self.task_vector_list:
             for key, tensor in task_vector.items():
@@ -299,12 +342,12 @@ class CLIP(ContinualModel):
             print("Averaging task vectors")
             for key, tensor in self.merged_parames.items():
                 tensor /= (self.current_task + 1)
+        '''
+        self.eval_params = deepcopy(self.net)
+        for name, param in self.eval_params.named_parameters():
+            if name in self.merged_params:
+                param += self.merged_params[name]
 
-        for name, param in self.net.named_parameters():
-            if name in self.merged_parames:
-                self.merged_parames[name] += param.data
-            else:
-                self.merged_parames[name] = param.data.clone()
 
         return super().end_task(dataset)
 
@@ -331,16 +374,21 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x, correctness: bool = False):#TODO: passa una booleana che in base a quello usa i parametri giusti
         #param = {name: param for name, param in zip(self.param_names, self.params_optimizer)}
-        if not correctness:
-            image_features = func.functional_call(self.net, self.merged_parames, x)
-        else:
-            image_features = func.functional_call(self.net, self.merged_parames, x)
+
+        image_features = func.functional_call(self.net,  {name: param for name, param in self.eval_params.named_parameters()}, x)
         similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
     @torch.no_grad()
     def forward_old(self, x):
         return self.net(x)[:, :self.n_seen_classes]
+
+
+
+
+
+
+
 
     def mask_classes(outputs: torch.Tensor, dataset: ContinualDataset, k: int) -> None:
         """
