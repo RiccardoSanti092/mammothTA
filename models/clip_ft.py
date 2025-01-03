@@ -266,6 +266,8 @@ class CLIP(ContinualModel):
 
         self.opt = optim.SGD(self.params_optimizer, lr=self.args.lr,
                              momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
+        self.delta_w = None
+        self.task_vector = None
         del self.delta_w, self.task_vector
 
         self.train()
@@ -326,7 +328,9 @@ class CLIP(ContinualModel):
             self.merged_params = task_vector_dict
             print("Media parametri aggiornata.")
 
-        del task_vector_dict, self.opt,
+        task_vector_dict = None
+        self.opt = None
+        del task_vector_dict, self.opt
         '''
         self.merged_parames = {}
         for task_vector in self.task_vector_list:
