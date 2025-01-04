@@ -35,6 +35,7 @@ from torch import optim
 from torch import func
 from typing import Iterable, Tuple
 from tqdm import tqdm
+import gc
 
 
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
@@ -233,7 +234,7 @@ class CLIP(ContinualModel):
         torch.cuda.empty_cache()
 
     def begin_task(self, dataset):
-
+        torch.cuda.empty_cache()
         dataset.test_loaders[-1].dataset.transform = self.clip_transform
         dataset.train_loader.dataset.transform = self.clip_transform
 
@@ -241,8 +242,7 @@ class CLIP(ContinualModel):
             self.net.task_id += 1
 
         self.delta_w = []
-        self.task_vector = deepcopy(self.net)
-        for name, param in self.task_vector.named_parameters():
+        for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
                 param.requires_grad = True
             elif self.args.ft_attention and "attn" in name:
@@ -260,15 +260,11 @@ class CLIP(ContinualModel):
             else:
                 param.requires_grad = False
             self.delta_w.append(param)
-        self.params_optimizer = self.delta_w
 
 
 
-        self.opt = optim.SGD(self.params_optimizer, lr=self.args.lr,
+        self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                              momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
-        self.delta_w = None
-        self.task_vector = None
-        del self.delta_w, self.task_vector
 
         self.train()
 
@@ -285,9 +281,9 @@ class CLIP(ContinualModel):
 
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
-                            in zip(self.net.named_parameters(), self.params_optimizer)}
+                            in zip(self.net.named_parameters(), self.delta_w)}
 
-        torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
+        #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
 
 
@@ -329,8 +325,10 @@ class CLIP(ContinualModel):
             print("Media parametri aggiornata.")
 
         task_vector_dict = None
+        torch.no_grad()
         self.opt = None
-        del task_vector_dict, self.opt
+        del task_vector_dict, self.opt, self.delta_w
+        gc.collect()
         '''
         self.merged_parames = {}
         for task_vector in self.task_vector_list:
@@ -350,15 +348,15 @@ class CLIP(ContinualModel):
         self.eval_params = deepcopy(self.net)
         for name, param in self.eval_params.named_parameters():
             if name in self.merged_params:
-                param += self.merged_params[name]
+                param = param + self.merged_params[name]  # TODO param.data
 
-
+        torch.cuda.empty_cache()
         return super().end_task(dataset)
 
     def observe(self, inputs, labels, not_aug_inputs, epoch = None):
 
         self.opt.zero_grad()
-        param = {name: param for name, param in zip(self.param_names, self.params_optimizer)}
+        param = {name: param for name, param in zip(self.param_names, self.delta_w)}
         image_features = func.functional_call(self.net, param, inputs)
         text_features = self.net.text_features[torch.unique(labels).tolist()]
         similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
