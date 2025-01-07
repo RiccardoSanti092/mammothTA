@@ -209,7 +209,6 @@ class CLIP(ContinualModel):
         self.predictions = []
         self.original_labels = []
 
-
         print("Updating the following layers:")
         if self.args.ft_linears:
             print("- linears")
@@ -321,9 +320,10 @@ class CLIP(ContinualModel):
         del self.opt, self.delta_w
         gc.collect()
 
-
-        self.eval_params = deepcopy(self.net)
-        for name, param in self.eval_params.named_parameters():
+        self.net.visual_encoder = None
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        self.net.visual_encoder = backbone.visual
+        for name, param in self.net.named_parameters():
             if name in self.merged_params:
                 param.data = param.data + self.merged_params[name]
 
@@ -351,8 +351,8 @@ class CLIP(ContinualModel):
         self.opt.step()
 
     @torch.no_grad()
-    def forward(self, x, correctness: bool = False):#TODO: passa una booleana che in base a quello usa i parametri giusti
-        image_features = func.functional_call(self.net,  {name: param for name, param in self.eval_params.named_parameters()}, x)
+    def forward(self, x):
+        image_features = func.functional_call(self.net,  {name: param for name, param in self.net.named_parameters()}, x)
         similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
