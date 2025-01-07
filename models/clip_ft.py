@@ -315,7 +315,7 @@ class CLIP(ContinualModel):
             self.merged_params = task_vector_dict
             print("Media parametri aggiornata.")
 
-        torch.no_grad()
+        self.opt.zero_grad()
         self.opt = None
         del self.opt, self.delta_w
         gc.collect()
