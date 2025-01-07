@@ -199,12 +199,9 @@ class CLIP(ContinualModel):
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.net = FinalModel(backbone, dataset, args)
-
         self.param_names = [name for name, _ in self.net.named_parameters()]
-
         for name, param in self.net.named_parameters():
             param.requires_grad = False
-
         torch.backends.cuda.enable_mem_efficient_sdp(False)
 
         self.clip_transform = clip_transform
@@ -241,6 +238,11 @@ class CLIP(ContinualModel):
         if self.current_task != 0:
             self.net.task_id += 1
 
+        print("\nRELOADING CLIP VISUAL ENCODER")
+        self.net.visual_encoder = None
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        self.net.visual_encoder = backbone.visual
+        print("\nCLIP VISUAL ENCODER RELOADED\n\n")
         self.delta_w = []
         for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
@@ -262,7 +264,6 @@ class CLIP(ContinualModel):
             self.delta_w.append(param)
 
 
-
         self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                              momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
 
@@ -278,6 +279,9 @@ class CLIP(ContinualModel):
             print(f"Predictions saved for task {self.current_task} in 'predictions_{self.args.dataset}_{self.current_task}.pt'")
             self.predictions = []
             self.original_labels = []
+
+
+
 
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
@@ -317,15 +321,16 @@ class CLIP(ContinualModel):
         del self.opt, self.delta_w
         gc.collect()
 
+
         self.eval_params = deepcopy(self.net)
         for name, param in self.eval_params.named_parameters():
             if name in self.merged_params:
-                param = param + self.merged_params[name]  # TODO param.data
+                param.data = param.data + self.merged_params[name]
 
         torch.cuda.empty_cache()
         return super().end_task(dataset)
 
-    def observe(self, inputs, labels, not_aug_inputs, epoch = None):
+    def observe(self, inputs, labels, not_aug_inputs, epoch=None):
 
         self.opt.zero_grad()
         param = {name: param for name, param in zip(self.param_names, self.delta_w)}
