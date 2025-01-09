@@ -193,7 +193,7 @@ class CLIP(ContinualModel):
         parser.add_argument('--ft_pos_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune posistional embedding')
         parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune projection layers')
         parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune convolutional layers')
-        parser.add_argument('--opti', type=str, default='sgd')
+        parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
 
         return parser
 
@@ -252,24 +252,31 @@ class CLIP(ContinualModel):
         for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_attention and "attn" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_class_embed and "class_embed" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_conv and "conv" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_ln and "ln" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_pos_embed and "positional_embedding" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             elif self.args.ft_proj and "proj" in name:
                 param.requires_grad = True
+                self.delta_w.append(param)
             else:
                 param.requires_grad = False
-            self.delta_w.append(param)
 
 
-        if self.args.opti == 'adamw':
+
+        if self.args.optimizer == 'adamw':
             self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
                                   weight_decay=self.args.optim_wd)
         else:

@@ -1,3 +1,4 @@
+
 """
 Adaptation of OpenAI's CLIP.
 Requires:
@@ -37,6 +38,8 @@ from typing import Iterable, Tuple
 from tqdm import tqdm
 import gc
 
+from adamow import AdamW
+
 
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
     params = []
@@ -71,11 +74,23 @@ def set_params(net, new_params: torch.Tensor, features=True, classifier=False, o
             progress += cur_size
 
 
-def get_delta_w_backbone(named_params, delta_w, delta_w_names, device):
+def get_delta_w_backbone(named_params, delta_w, delta_w_names, peft_type, device, vera_B=None, vera_A=None, vera_r=None):
     params = []
     for name, param in named_params():
-        if name in delta_w_names:
-            params.append(torch.zeros_like(param).view(-1).to(device))
+        if "head" not in name:
+            if name in delta_w_names:
+                index = delta_w_names.index(name)
+                if peft_type == "lora":
+                    cur_delta_w = delta_w[index][0] @ delta_w[index][1]
+                elif peft_type == "ia3":
+                    cur_delta_w = delta_w[index] * param.data
+                elif peft_type == "full":
+                    cur_delta_w = delta_w[index]
+                elif peft_type == "vera":
+                    cur_delta_w = (delta_w[index][0] * vera_B[:param.shape[0], :vera_r]) @ (delta_w[index][1] * vera_A[:vera_r, :param.shape[1]])
+                params.append(cur_delta_w.view(-1).to(device))
+            else:
+                params.append(torch.zeros_like(param).view(-1).to(device))
 
     if len(params):
         return torch.cat(params)
@@ -83,10 +98,21 @@ def get_delta_w_backbone(named_params, delta_w, delta_w_names, device):
         return torch.tensor([0.]).to(device)
 
 
-def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, device):
+def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, peft_type, device, vera_B=None, vera_A=None, vera_r=None):
     params = []
     for name, param in named_params():
         if name in delta_w_names:
+            index = delta_w_names.index(name)
+            if peft_type == "lora":
+                cur_delta_w = delta_w[index][0] @ delta_w[index][1]
+            elif peft_type == "ia3":
+                cur_delta_w = delta_w[index] * param.data
+            elif peft_type == "full":
+                cur_delta_w = delta_w[index]
+            elif peft_type == "vera":
+                cur_delta_w = (delta_w[index][0] * vera_B[:param.shape[0], :vera_r]) @ (delta_w[index][1] * vera_A[:vera_r, :param.shape[1]])
+            params.append(cur_delta_w.to(device))
+        else:
             params.append(torch.zeros_like(param).to(device))
 
     return params
@@ -97,8 +123,10 @@ class FinalModel(nn.Module):
     def __init__(self, clip_model, dataset: ContinualDataset, args) -> None:
         super().__init__()
         self.dataset = dataset
+        clip_model.to(dtype=torch.float32)
+
         self.visual_encoder = deepcopy(clip_model.visual)
-        self.dtype = clip_model.dtype
+        self.dtype = torch.float32
         self.args = args
 
 
@@ -146,7 +174,7 @@ class FinalModel(nn.Module):
 
 class CLIP(ContinualModel):
     """STATIC Continual Learning with CLIP"""
-    NAME = 'clip_TA'
+    NAME = 'clip_ta'
     COMPATIBILITY = ['class-il', 'domain-il', 'task-il', 'general-continual']
 
     @staticmethod
@@ -159,30 +187,26 @@ class CLIP(ContinualModel):
                             help='Whether to save predictions of the TRAINING set after each task')
         parser.add_argument('--use_templates', type=binary_to_boolean_type, default=0,
                             help='Whether to use prompt templates for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
-        parser.add_argument('--ft_linears', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune linear layers')
-        parser.add_argument('--ft_attention', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune attention layers')
-        parser.add_argument('--ft_ln', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune layer norm')
-        parser.add_argument('--ft_class_embed', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune class embedding layers')
-        parser.add_argument('--ft_pos_embed', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune posistional embedding')
-        parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune projection layers')
-        parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune convolutional layers')
-        parser.add_argument('--tangent', type=binary_to_boolean_type, default=0, help='Set to 1 to fine-tune on tangent hyperplane')
+        parser.add_argument('--ft_linears', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune linear layers')
+        parser.add_argument('--ft_attention', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune attention layers')
+        parser.add_argument('--ft_ln', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune layer norm')
+        parser.add_argument('--ft_class_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune class embedding layers')
+        parser.add_argument('--ft_pos_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune posistional embedding')
+        parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune projection layers')
+        parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune convolutional layers')
+        parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
 
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
         backbone, clip_transform = clip.load(args.clip_backbone, device=torch.device("cpu"))
-        clip.model.convert_weights(backbone)
+        #clip.model.convert_weights(backbone)
 
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.net = FinalModel(backbone, dataset, args)
-        self.delta_net = deepcopy(self.net)
-        set_params(self.delta_net, torch.zeros_like(get_params(self.delta_net)))
         self.param_names = [name for name, _ in self.net.named_parameters()]
         for name, param in self.net.named_parameters():
-            param.requires_grad = False
-        for name, param in self.delta_net.named_parameters():
             param.requires_grad = False
         torch.backends.cuda.enable_mem_efficient_sdp(False)
 
@@ -207,6 +231,7 @@ class CLIP(ContinualModel):
         if self.args.ft_proj:
             print("- projection")
 
+
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
@@ -222,34 +247,44 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = None
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         self.net.visual_encoder = backbone.visual
+        self.net.visual_encoder.to(dtype=torch.float32)
         print("\nCLIP VISUAL ENCODER RELOADED\n\n")
         self.delta_w = []
+
         for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_attention and "attn" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_class_embed and "class_embed" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_conv and "conv" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_ln and "ln" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_pos_embed and "positional_embedding" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             elif self.args.ft_proj and "proj" in name:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+                param.requires_grad = True
             else:
-                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=False, device=self.device))
+                param.requires_grad = False
+            self.delta_w.append(param)
 
-        self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
-                             momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
+
+
+        if self.args.optimizer == 'adamw':
+            self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
+                                  weight_decay=self.args.optim_wd)
+        else:
+            self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
+                                 momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
 
         self.train()
 
     def end_task(self, dataset: ContinualDataset) -> None:
         print("Current task:")
         print(self.current_task)
+
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(self.net.named_parameters(), self.delta_w)}
@@ -282,24 +317,25 @@ class CLIP(ContinualModel):
         return super().end_task(dataset)
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
+
         self.opt.zero_grad()
 
         if self.args.tangent:
-
             def func_network(param_values):
                 param = {name: param for name, param in zip(self.param_names, param_values)}
                 return func.functional_call(self.net, param, inputs)
 
-            features, jvp = func.jvp(
-                func_network, tuple(self.net.parameters()), tuple(self.delta_w)
+            image_features, jvp = func.jvp(
+                func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.delta_w)),
             )
-
-
+            image_features += jvp
         else:
+
             param = {name: param for name, param in zip(self.param_names, self.delta_w)}
             image_features = func.functional_call(self.net, param, inputs)
+
         text_features = self.net.text_features[torch.unique(labels).tolist()]
-        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
+        similarity = (image_features @ text_features.T).softmax(dim=-1)
         loss = self.loss(similarity, (labels % 2))
         loss.backward()
         self.opt.step()
@@ -316,10 +352,30 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net,  {name: param for name, param in self.net.named_parameters()}, x)
-        similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
+        similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
     @torch.no_grad()
     def forward_old(self, x):
         return self.net(x)[:, :self.n_seen_classes]
 
+
+
+'''        for name, param in self.net.visual_encoder.named_parameters():
+            if self.args.ft_linears and "mlp" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_attention and "attn" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_class_embed and "class_embed" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_conv and "conv" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_ln and "ln" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_pos_embed and "positional_embedding" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            elif self.args.ft_proj and "proj" in name:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=True, device=self.device))
+            else:
+                self.delta_w.append(torch.zeros(param.data.shape, requires_grad=False, device=self.device))
+'''
