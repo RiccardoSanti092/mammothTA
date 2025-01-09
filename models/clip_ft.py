@@ -285,6 +285,8 @@ class CLIP(ContinualModel):
 
         self.train()
 
+        self.virtual_btach_counter = 0
+
     def end_task(self, dataset: ContinualDataset) -> None:
         print("Current task:")
         print(self.current_task)
@@ -322,14 +324,33 @@ class CLIP(ContinualModel):
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
 
-        self.opt.zero_grad()
-        param = {name: param for name, param in zip(self.param_names, self.delta_w)}
-        image_features = func.functional_call(self.net, param, inputs)
+
+
+        if self.args.tangent:
+            def func_network(param_values):
+                param = {name: param for name, param in zip(self.param_names, param_values)}
+                return func.functional_call(self.net, param, inputs)
+
+            image_features, jvp = func.jvp(
+                func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.delta_w),),
+            )
+            image_features = image_features + jvp
+        else:
+
+            param = {name: param for name, param in zip(self.param_names, self.delta_w)}
+            image_features = func.functional_call(self.net, param, inputs)
+
         text_features = self.net.text_features[torch.unique(labels).tolist()]
         similarity = (image_features @ text_features.T).softmax(dim=-1)
-        loss = self.loss(similarity, (labels % 2))
+        loss = self.loss(similarity, (labels % 2)) / 2
         loss.backward()
-        self.opt.step()
+        self.virtual_btach_counter += 1
+
+        if self.virtual_btach_counter == 2:
+            self.opt.step()
+            self.opt.zero_grad()
+            self.virtual_btach_counter = 0
+
 
         return loss.item()
 
