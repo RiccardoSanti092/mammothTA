@@ -281,7 +281,7 @@ class CLIP(ContinualModel):
                                   weight_decay=self.args.optim_wd)
         else:
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
-                                 momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
+                                 momentum=self.args.optim_mom)
 
         self.train()
 
