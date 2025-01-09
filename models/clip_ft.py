@@ -189,6 +189,7 @@ class CLIP(ContinualModel):
         parser.add_argument('--ft_pos_embed', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune posistional embedding')
         parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune projection layers')
         parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune convolutional layers')
+        parser.add_argument('--opti', type=str, default='sgd')
 
         return parser
 
@@ -263,47 +264,24 @@ class CLIP(ContinualModel):
             self.delta_w.append(param)
 
 
-        self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
-                             momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
+        if self.args.opti == 'adamw':
+            self.opt = optim.Adam(self.delta_w, lr=self.args.lr,
+                                  weight_decay=self.args.optim_wd)
+        else:
+            self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
+                                 momentum=self.args.optim_mom, weight_decay=self.args.optim_wd)
 
         self.train()
 
     def end_task(self, dataset: ContinualDataset) -> None:
         print("Current task:")
         print(self.current_task)
-        if self.args.save_predictions:
-            self.predictions = torch.cat(self.predictions, dim=0).cpu()
-            self.original_labels = torch.cat(self.original_labels, dim=0).cpu()
-            torch.save((self.predictions, self.original_labels), f'predictions_{self.args.dataset}_{self.current_task}.pt')
-            print(f"Predictions saved for task {self.current_task} in 'predictions_{self.args.dataset}_{self.current_task}.pt'")
-            self.predictions = []
-            self.original_labels = []
-
-
-
 
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(self.net.named_parameters(), self.delta_w)}
 
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
-
-        '''
-              self.merged_parames = {}
-              for task_vector in self.task_vector_list:
-                  for key, tensor in task_vector.items():
-                      if key in self.merged_parames:
-                          self.merged_parames[key] += tensor
-                      else:
-                          self.merged_parames[key] = tensor.clone()
-
-              #TODO: implementa il merging di Peet che é piú elegante a scrittura
-
-              if self.current_task > 0:
-                  print("Averaging task vectors")
-                  for key, tensor in self.merged_parames.items():
-                      tensor /= (self.current_task + 1)
-              '''
 
         if self.current_task > 0:
             for key in self.merged_params:
@@ -336,7 +314,7 @@ class CLIP(ContinualModel):
         param = {name: param for name, param in zip(self.param_names, self.delta_w)}
         image_features = func.functional_call(self.net, param, inputs)
         text_features = self.net.text_features[torch.unique(labels).tolist()]
-        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
+        similarity = (image_features @ text_features.T).softmax(dim=-1)
         loss = self.loss(similarity, (labels % 2))
         loss.backward()
         self.opt.step()
