@@ -194,7 +194,7 @@ class CLIP(ContinualModel):
         parser.add_argument('--ft_proj', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune projection layers')
         parser.add_argument('--ft_conv', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune convolutional layers')
         parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
-        parser.add_argument('--chuncks', type=int, default=1, help='chose how many chunks for vitual batch size')
+        parser.add_argument('--chunks', type=int, default=1, help='chose how many chunks for vitual batch size')
 
         return parser
 
@@ -343,11 +343,11 @@ class CLIP(ContinualModel):
 
         text_features = self.net.text_features[torch.unique(labels).tolist()]
         similarity = (image_features @ text_features.T).softmax(dim=-1)
-        loss = self.loss(similarity, (labels % 2)) / self.args.chuncks
+        loss = self.loss(similarity, (labels % 2)) / self.args.chunks
         loss.backward()
         self.virtual_btach_counter += 1
 
-        if self.virtual_btach_counter == self.args.chuncks:
+        if self.virtual_btach_counter == self.args.chunks:
             self.opt.step()
             self.opt.zero_grad()
             self.virtual_btach_counter = 0
