@@ -270,7 +270,7 @@ class CLIP(ContinualModel):
 
 
         if self.args.opti == 'adamw':
-            self.opt = AdamW(self.delta_w, lr=self.args.lr,
+            self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
                                   weight_decay=self.args.optim_wd)
         else:
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
