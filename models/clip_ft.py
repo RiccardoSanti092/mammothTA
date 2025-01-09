@@ -37,6 +37,8 @@ from typing import Iterable, Tuple
 from tqdm import tqdm
 import gc
 
+from adamow import AdamW
+
 
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
     params = []
@@ -120,8 +122,10 @@ class FinalModel(nn.Module):
     def __init__(self, clip_model, dataset: ContinualDataset, args) -> None:
         super().__init__()
         self.dataset = dataset
+        clip_model.to(dtype=torch.float32)
+
         self.visual_encoder = deepcopy(clip_model.visual)
-        self.dtype = clip_model.dtype
+        self.dtype = torch.float32
         self.args = args
 
 
@@ -195,7 +199,7 @@ class CLIP(ContinualModel):
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
         backbone, clip_transform = clip.load(args.clip_backbone, device=torch.device("cpu"))
-        clip.model.convert_weights(backbone)
+        #clip.model.convert_weights(backbone)
 
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
@@ -242,6 +246,7 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = None
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         self.net.visual_encoder = backbone.visual
+        self.net.visual_encoder.to(dtype=torch.float32)
         print("\nCLIP VISUAL ENCODER RELOADED\n\n")
         self.delta_w = []
         for name, param in self.net.visual_encoder.named_parameters():
@@ -265,7 +270,7 @@ class CLIP(ContinualModel):
 
 
         if self.args.opti == 'adamw':
-            self.opt = optim.Adam(self.delta_w, lr=self.args.lr,
+            self.opt = AdamW(self.delta_w, lr=self.args.lr,
                                   weight_decay=self.args.optim_wd)
         else:
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
