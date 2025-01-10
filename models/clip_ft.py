@@ -234,6 +234,9 @@ class CLIP(ContinualModel):
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
+    def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
+        self.scheduler.step()
+
     def begin_task(self, dataset):
         torch.cuda.empty_cache()
         dataset.test_loaders[-1].dataset.transform = self.clip_transform
@@ -281,6 +284,8 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs, )
+
         self.train()
         self.virtual_batch_counter = 0
 
@@ -294,15 +299,24 @@ class CLIP(ContinualModel):
 
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
-        if self.current_task > 0:
-            for key in self.merged_params:
-                self.merged_params[key] *= self.current_task
-                self.merged_params[key] += task_vector_dict[key]
-                self.merged_params[key] /= (self.current_task + 1)
-            print("Media parametri aggiornata.")
+        if self.args.tangent:
+            if self.current_task > 0:
+                for key in self.merged_params:
+                    self.merged_params[key] += task_vector_dict[key]
+                print("Somma task vector aggiornata.")
+            else:
+                self.merged_params = task_vector_dict
+                print("Somma task vector aggiornata.")
         else:
-            self.merged_params = task_vector_dict
-            print("Media parametri aggiornata.")
+            if self.current_task > 0:
+                for key in self.merged_params:
+                    self.merged_params[key] *= self.current_task
+                    self.merged_params[key] += task_vector_dict[key]
+                    self.merged_params[key] /= (self.current_task + 1)
+                print("Media parametri aggiornata.")
+            else:
+                self.merged_params = task_vector_dict
+                print("Media parametri aggiornata.")
 
         self.opt.zero_grad()
         self.opt = None
@@ -335,17 +349,8 @@ class CLIP(ContinualModel):
             param = {name: param for name, param in zip(self.param_names, self.delta_w)}
             image_features = func.functional_call(self.net, param, inputs)
 
-        text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))] #TODO i in range(n_classi / n_task)
-        similarity = (image_features @ text_features.T).softmax(dim=-1)
-        #print(f"Labels: {labels}, after % {int(self.N_CLASSES / self.N_TASKS)}: {labels % int(self.N_CLASSES / self.N_TASKS)}")
-        #print('\n')
-        #print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
-        #print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
-        #print(f"image features shape: {inputs.shape}")
-        #print(f"image features shape: {image_features.shape}")
-        #print(f"text features shape: {text_features.shape}")
-        #print(f"Similarity shape: {similarity.shape}")
-
+        text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]
+        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
@@ -367,7 +372,7 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net,  {name: param for name, param in self.net.named_parameters()}, x)
-        similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
+        similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
     @torch.no_grad()
