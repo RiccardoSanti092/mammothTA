@@ -231,7 +231,6 @@ class CLIP(ContinualModel):
         if self.args.ft_proj:
             print("- projection")
 
-
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
@@ -275,8 +274,6 @@ class CLIP(ContinualModel):
             else:
                 param.requires_grad = False
 
-
-
         if self.args.optimizer == 'adamw':
             self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
                                   weight_decay=self.args.optim_wd)
@@ -285,8 +282,7 @@ class CLIP(ContinualModel):
                                  momentum=self.args.optim_mom)
 
         self.train()
-
-        self.virtual_btach_counter = 0
+        self.virtual_batch_counter = 0
 
     def end_task(self, dataset: ContinualDataset) -> None:
         print("Current task:")
@@ -325,8 +321,6 @@ class CLIP(ContinualModel):
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
 
-
-
         if self.args.tangent:
             def func_network(param_values):
                 param = {name: param for name, param in zip(self.param_names, param_values)}
@@ -343,15 +337,15 @@ class CLIP(ContinualModel):
 
         text_features = self.net.text_features[torch.unique(labels).tolist()]
         similarity = (image_features @ text_features.T).softmax(dim=-1)
+        print(f"Labels: {labels}, after % 2: {labels % 2}")
         loss = self.loss(similarity, (labels % 2)) / self.args.chunks
         loss.backward()
-        self.virtual_btach_counter += 1
+        self.virtual_batch_counter += 1
 
         if self.virtual_btach_counter == self.args.chunks:
             self.opt.step()
             self.opt.zero_grad()
-            self.virtual_btach_counter = 0
-
+            self.virtual_batch_counter = 0
 
         return loss.item()
 
