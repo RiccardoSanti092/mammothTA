@@ -342,7 +342,7 @@ class CLIP(ContinualModel):
         loss.backward()
         self.virtual_batch_counter += 1
 
-        if self.virtual_btach_counter == self.args.chunks:
+        if self.virtual_batch_counter == self.args.chunks:
             self.opt.step()
             self.opt.zero_grad()
             self.virtual_batch_counter = 0
