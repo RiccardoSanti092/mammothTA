@@ -338,6 +338,11 @@ class CLIP(ContinualModel):
         text_features = self.net.text_features[torch.unique(labels).tolist()]
         similarity = (image_features @ text_features.T).softmax(dim=-1)
         print(f"Labels: {labels}, after % {int(self.N_CLASSES / self.N_TASKS)}: {labels % int(self.N_CLASSES / self.N_TASKS)}")
+        print('\n')
+        print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
+        print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
+        print(f"Similarity shape: {similarity.shape}")
+
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
