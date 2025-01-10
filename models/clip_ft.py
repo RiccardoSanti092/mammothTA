@@ -299,6 +299,7 @@ class CLIP(ContinualModel):
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(backbone.visual.named_parameters(), self.delta_w)}
 
+        print(task_vector_dict)
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
@@ -327,6 +328,7 @@ class CLIP(ContinualModel):
 
         self.net.visual_encoder = None
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        backbone.to(dtype=torch.float32)
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.named_parameters():
             if name in self.merged_params:
