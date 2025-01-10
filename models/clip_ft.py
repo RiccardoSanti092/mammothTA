@@ -333,7 +333,7 @@ class CLIP(ContinualModel):
         else:
 
             param = {name: param for name, param in zip(self.param_names, self.delta_w)}
-            image_features = func.functional_call(self.net.visual_encoder, param, inputs)
+            image_features = func.functional_call(self.net, param, inputs)
 
         text_features = self.net.text_features[torch.unique(labels).tolist()] #TODO i in range(n_classi / n_task) * task_index
         similarity = (image_features @ text_features.T).softmax(dim=-1)
@@ -342,7 +342,7 @@ class CLIP(ContinualModel):
         print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
         print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
         print(f"image features shape: {inputs.shape}")
-        print(f"image features shape: {similarity.shape}")
+        print(f"image features shape: {image_features.shape}")
         print(f"text features shape: {similarity.shape}")
         print(f"Similarity shape: {similarity.shape}")
 
