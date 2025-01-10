@@ -337,6 +337,7 @@ class CLIP(ContinualModel):
 
         text_features = self.net.text_features[list(labels)] #TODO i in range(n_classi / n_task) * task_index
         similarity = (image_features @ text_features.T).softmax(dim=-1)
+        print(list(labels))
         #print(f"Labels: {labels}, after % {int(self.N_CLASSES / self.N_TASKS)}: {labels % int(self.N_CLASSES / self.N_TASKS)}")
         #print('\n')
         #print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
