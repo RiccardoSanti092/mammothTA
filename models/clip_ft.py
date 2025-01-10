@@ -354,7 +354,7 @@ class CLIP(ContinualModel):
             image_features = func.functional_call(self.net, param, inputs)
 
         text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]
-        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
+        similarity = (image_features @ text_features.T).softmax(dim=-1)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
@@ -376,7 +376,7 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net,  {name: param for name, param in self.net.named_parameters()}, x)
-        similarity = (100.0 * (image_features @ self.net.text_features.T)).softmax(dim=-1)
+        similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
     @torch.no_grad()
