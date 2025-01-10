@@ -337,14 +337,14 @@ class CLIP(ContinualModel):
 
         text_features = self.net.text_features[list(labels)] #TODO i in range(n_classi / n_task) * task_index
         similarity = (image_features @ text_features.T).softmax(dim=-1)
-        print(f"Labels: {labels}, after % {int(self.N_CLASSES / self.N_TASKS)}: {labels % int(self.N_CLASSES / self.N_TASKS)}")
-        print('\n')
-        print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
-        print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
-        print(f"image features shape: {inputs.shape}")
-        print(f"image features shape: {image_features.shape}")
-        print(f"text features shape: {text_features.shape}")
-        print(f"Similarity shape: {similarity.shape}")
+        #print(f"Labels: {labels}, after % {int(self.N_CLASSES / self.N_TASKS)}: {labels % int(self.N_CLASSES / self.N_TASKS)}")
+        #print('\n')
+        #print(f"self.N_CLASSES: {self.N_CLASSES}, self.N_TASKS: {self.N_TASKS}")
+        #print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
+        #print(f"image features shape: {inputs.shape}")
+        #print(f"image features shape: {image_features.shape}")
+        #print(f"text features shape: {text_features.shape}")
+        #print(f"Similarity shape: {similarity.shape}")
 
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
