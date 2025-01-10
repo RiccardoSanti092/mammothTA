@@ -343,7 +343,7 @@ class CLIP(ContinualModel):
         print(f"Expected number of classes per task: {int(self.N_CLASSES / self.N_TASKS)}")
         print(f"image features shape: {inputs.shape}")
         print(f"image features shape: {image_features.shape}")
-        print(f"text features shape: {similarity.shape}")
+        print(f"text features shape: {text_features.shape}")
         print(f"Similarity shape: {similarity.shape}")
 
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
