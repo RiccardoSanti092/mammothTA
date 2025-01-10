@@ -284,7 +284,7 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs, )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
 
         self.train()
         self.virtual_batch_counter = 0
@@ -293,16 +293,18 @@ class CLIP(ContinualModel):
         print("Current task:")
         print(self.current_task)
 
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        backbone.to(dtype=torch.float32)
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
-                            in zip(self.net.named_parameters(), self.delta_w)}
+                            in zip(backbone.visual.named_parameters(), self.delta_w)}
 
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
             if self.current_task > 0:
                 for key in self.merged_params:
-                    self.merged_params[key] += task_vector_dict[key]
+                    self.merged_params[key].data += task_vector_dict[key].data
                 print("Somma task vector aggiornata.")
             else:
                 self.merged_params = task_vector_dict
@@ -310,9 +312,9 @@ class CLIP(ContinualModel):
         else:
             if self.current_task > 0:
                 for key in self.merged_params:
-                    self.merged_params[key] *= self.current_task
-                    self.merged_params[key] += task_vector_dict[key]
-                    self.merged_params[key] /= (self.current_task + 1)
+                    self.merged_params[key].data *= self.current_task
+                    self.merged_params[key].data += task_vector_dict[key].data #TODO forse ci vuole .data
+                    self.merged_params[key].data /= (self.current_task + 1)
                 print("Media parametri aggiornata.")
             else:
                 self.merged_params = task_vector_dict
