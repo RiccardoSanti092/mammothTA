@@ -335,7 +335,6 @@ class CLIP(ContinualModel):
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
                 param.data = param.data + self.merged_params[name].data
-                print("a")
 
         torch.cuda.empty_cache()
         return super().end_task(dataset)
