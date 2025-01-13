@@ -352,12 +352,12 @@ class CLIP(ContinualModel):
             image_features = image_features + jvp
         else:
 
-            param = {name: param for name, param in zip(self.param_names, self.delta_w)}
+            param = {name: param for name, param in zip(self.param_names, self.net.parameters())}
             image_features = func.functional_call(self.net, param, inputs)
 
-        text_features = self.net.text_features[torch.arange(self.cur_offset, self.cur_offset + self.cpt)]
+        text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]# TODO rischio bug incoming con cars196
         similarity = (image_features @ text_features.T).softmax(dim=-1)
-        loss = self.loss(similarity, (labels - self.cur_offset)) / self.args.chunks
+        loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
 
