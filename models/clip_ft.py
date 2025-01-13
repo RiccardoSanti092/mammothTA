@@ -241,6 +241,11 @@ class CLIP(ContinualModel):
         torch.cuda.empty_cache()
         dataset.test_loaders[-1].dataset.transform = self.clip_transform
         dataset.train_loader.dataset.transform = self.clip_transform
+        self.cur_offset = self.compute_offsets(self.current_task)
+        if isinstance(dataset.N_CLASSES_PER_TASK, int):
+            self.cpt = dataset.N_CLASSES_PER_TASK
+        else:
+            self.cpt = dataset.N_CLASSES_PER_TASK[-1]
 
         if self.current_task != 0:
             self.net.task_id += 1
@@ -299,7 +304,7 @@ class CLIP(ContinualModel):
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(backbone.visual.named_parameters(), self.delta_w)}
 
-        print(task_vector_dict)
+        #print(task_vector_dict)
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
@@ -330,9 +335,10 @@ class CLIP(ContinualModel):
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         backbone.to(dtype=torch.float32)
         self.net.visual_encoder = backbone.visual
-        for name, param in self.net.named_parameters():
+        for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
-                param.data = param.data + self.merged_params[name]
+                param.data = param.data + self.merged_params[name].data
+                print("a")
 
         torch.cuda.empty_cache()
         return super().end_task(dataset)
@@ -353,9 +359,9 @@ class CLIP(ContinualModel):
             param = {name: param for name, param in zip(self.param_names, self.delta_w)}
             image_features = func.functional_call(self.net, param, inputs)
 
-        text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]
+        text_features = self.net.text_features[torch.arange(self.cur_offset, self.cur_offset + self.cpt)]
         similarity = (image_features @ text_features.T).softmax(dim=-1)
-        loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
+        loss = self.loss(similarity, (labels - self.cur_offset)) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
 
@@ -383,3 +389,5 @@ class CLIP(ContinualModel):
     def forward_old(self, x):
         return self.net(x)[:, :self.n_seen_classes]
 
+    def get_debug_iters(self):
+        return 20
