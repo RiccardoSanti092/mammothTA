@@ -132,8 +132,16 @@ class SequentialCIFAR100224(ContinualDataset):
 
 
 class SequentialCIFAR100224_5(SequentialCIFAR100224):
+    """
+    Subclass of SequentialCIFAR100224 with updated settings:
+        - NAME: 'seq-cifar100-224-5'
+        - N_CLASSES_PER_TASK: 20
+        - N_TASKS: 5
+    """
+
+    NAME = 'seq-cifar100-224-5'
+    N_CLASSES_PER_TASK = 20
+    N_TASKS = 5
+
     def __init__(self, args, transform_type: str = 'weak'):
-        super().__init__()
-        NAME = 'seq-cifar100-224-5'
-        N_CLASSES_PER_TASK = 20
-        N_TASKS = 5
+        super().__init__(args, transform_type)
