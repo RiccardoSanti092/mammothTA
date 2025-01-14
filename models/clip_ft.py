@@ -158,19 +158,6 @@ class FinalModel(nn.Module):
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         return image_features
 
-    def forward_old(self, x, idx_classes=None):
-        image_features = self.visual_encoder(x.type(self.dtype))
-        text_features = self.text_features
-
-        if idx_classes is not None:
-            text_features = text_features[idx_classes]
-
-        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-        similarity = (100.0 * (image_features @ text_features.T)).softmax(dim=-1)
-
-        return similarity
-
-
 class CLIP(ContinualModel):
     """STATIC Continual Learning with CLIP"""
     NAME = 'clip_ft'
@@ -234,8 +221,8 @@ class CLIP(ContinualModel):
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
-    def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
-        self.scheduler.step()
+    #def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
+        #self.scheduler.step()
 
     def begin_task(self, dataset):
         torch.cuda.empty_cache()
@@ -289,7 +276,7 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
+        #self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
 
         self.train()
         self.virtual_batch_counter = 0
@@ -318,7 +305,7 @@ class CLIP(ContinualModel):
             if self.current_task > 0:
                 for key in self.merged_params:
                     self.merged_params[key].data *= self.current_task
-                    self.merged_params[key].data += task_vector_dict[key].data #TODO forse ci vuole .data
+                    self.merged_params[key].data += task_vector_dict[key].data
                     self.merged_params[key].data /= (self.current_task + 1)
                 print("Media parametri aggiornata.")
             else:
@@ -331,6 +318,8 @@ class CLIP(ContinualModel):
         gc.collect()
 
         self.net.visual_encoder = None
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        backbone.to(dtype=torch.float32)
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
@@ -368,12 +357,6 @@ class CLIP(ContinualModel):
 
         return loss.item()
 
-    def observe_old(self, inputs, labels, not_aug_inputs, epoch=None, **kwargs):
-
-        outputs = self.net(inputs, torch.unique(labels).tolist())
-        loss = self.loss(outputs, (labels % 2))
-        loss.backward()
-        self.opt.step()
 
     @torch.no_grad()
     def forward(self, x):
@@ -381,9 +364,6 @@ class CLIP(ContinualModel):
         similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
         return similarity[:, :self.n_seen_classes]
 
-    @torch.no_grad()
-    def forward_old(self, x):
-        return self.net(x)[:, :self.n_seen_classes]
 
     def get_debug_iters(self):
         return 20
