@@ -304,9 +304,9 @@ class CLIP(ContinualModel):
         else:
             if self.current_task > 0:
                 for key in self.merged_params:
-                    self.merged_params[key].data *= self.current_task
-                    self.merged_params[key].data += task_vector_dict[key].data
-                    self.merged_params[key].data /= (self.current_task + 1)
+                    self.merged_params[key].data = self.merged_params[key].data * self.current_task
+                    self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
+                    self.merged_params[key].data = self.merged_params[key].data / (self.current_task + 1)
                 print("Media parametri aggiornata.")
             else:
                 self.merged_params = task_vector_dict
@@ -318,8 +318,6 @@ class CLIP(ContinualModel):
         gc.collect()
 
         self.net.visual_encoder = None
-        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
-        backbone.to(dtype=torch.float32)
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
@@ -335,13 +333,11 @@ class CLIP(ContinualModel):
                 param = {name: param for name, param in zip(self.param_names, param_values)}
                 return func.functional_call(self.net, param, inputs)
 
-            image_features, jvp = func.jvp(
-                func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.delta_w),),
-            )
+            image_features, jvp = func.jvp(func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.delta_w),),)
             image_features = image_features + jvp
         else:
 
-            param = {name: param for name, param in zip(self.param_names, self.net.parameters())}
+            param = {name: param for name, param in zip(self.param_names, self.delta_w)}
             image_features = func.functional_call(self.net, param, inputs)
 
         text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]# TODO rischio bug incoming con cars196
