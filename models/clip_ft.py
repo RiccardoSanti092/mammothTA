@@ -242,32 +242,33 @@ class CLIP(ContinualModel):
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         self.net.visual_encoder = backbone.visual
         self.net.visual_encoder.to(dtype=torch.float32)
+        for param in self.net.visual_encoder.parameters():
+            param.requires_grad = False
         print("\nCLIP VISUAL ENCODER RELOADED\n\n")
         self.delta_w = []
+        self.delta_w_names = []
         for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_attention and "attn" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_class_embed and "class_embed" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_conv and "conv" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_ln and "ln" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_pos_embed and "positional_embedding" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
             elif self.args.ft_proj and "proj" in name:
-                param.requires_grad = True
-                self.delta_w.append(param)
-            else:
-                param.requires_grad = False
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w_names.append(name)
 
         if self.args.optimizer == 'adamw':
             self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
@@ -287,10 +288,13 @@ class CLIP(ContinualModel):
 
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         backbone.to(dtype=torch.float32)
+
+        '''
         task_vector_dict = {name: param_finetuned - param_pretrained
                             for ((name, param_pretrained), (param_finetuned))
                             in zip(backbone.visual.named_parameters(), self.delta_w)}
-
+        
+        
         #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
@@ -311,10 +315,24 @@ class CLIP(ContinualModel):
             else:
                 self.merged_params = task_vector_dict
                 print("Media parametri aggiornata.")
+        '''
+        task_vector_dict = {}
+        for i in range(len(self.delta_w)):
+            task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
+
+        if self.current_task > 0:
+            for key in self.merged_params:
+                self.merged_params[key].data = self.merged_params[key].data * self.current_task
+                self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
+                self.merged_params[key].data = self.merged_params[key].data / (self.current_task + 1)
+            print("Media parametri aggiornata.")
+        else:
+            self.merged_params = task_vector_dict
+            print("Media parametri aggiornata.")
 
         self.opt.zero_grad()
         self.opt = None
-        del self.opt, self.delta_w
+        del self.opt, self.delta_w, self.delta_w_names
         gc.collect()
 
         self.net.visual_encoder = None
@@ -337,8 +355,10 @@ class CLIP(ContinualModel):
             image_features = image_features + jvp
         else:
 
-            param = {name: param for name, param in zip(self.param_names, self.delta_w)}
-            image_features = func.functional_call(self.net, param, inputs)
+            tunable_params = [p for n, p in self.net.visual_encoder.named_parameters() if n in self.delta_w_names]
+            dict_param = {name: param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)}
+
+            image_features = func.functional_call(self.net.visual_encoder, dict_param, inputs)
 
         text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]# TODO rischio bug incoming con cars196
         similarity = (image_features @ text_features.T).softmax(dim=-1)
