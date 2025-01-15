@@ -347,7 +347,6 @@ class CLIP(ContinualModel):
         for i in range(len(self.delta_w)):
             task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
 
-        '''
         if self.current_task > 0:
             for key in self.merged_params:
                 self.merged_params[key].data = self.merged_params[key].data * self.current_task
@@ -357,10 +356,6 @@ class CLIP(ContinualModel):
         else:
             self.merged_params = task_vector_dict
             print("Media parametri aggiornata.")
-        '''
-
-        self.merged_params = task_vector_dict
-        print("Media parametri aggiornata.")
 
         self.opt.zero_grad()
         self.opt = None
