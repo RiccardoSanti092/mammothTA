@@ -36,6 +36,7 @@ from torch import func
 from typing import Iterable, Tuple
 from tqdm import tqdm
 import gc
+import numpy as np
 
 from adamow import AdamW
 
@@ -115,6 +116,29 @@ def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, peft_type, d
             params.append(torch.zeros_like(param).to(device))
 
     return params
+
+
+def assign_learning_rate(param_group, new_lr):
+    param_group["lr"] = new_lr
+
+
+def _warmup_lr(base_lr, warmup_length, step):
+    return base_lr * (step + 1) / warmup_length
+
+def cosine_lr(optimizer, base_lrs, warmup_length, steps):
+    if not isinstance(base_lrs, list):
+        base_lrs = [base_lrs for _ in optimizer.param_groups]
+    assert len(base_lrs) == len(optimizer.param_groups)
+    def _lr_adjuster(step):
+        for param_group, base_lr in zip(optimizer.param_groups, base_lrs):
+            if step < warmup_length:
+                lr = _warmup_lr(base_lr, warmup_length, step)
+            else:
+                e = step - warmup_length
+                es = steps - warmup_length
+                lr = 0.5 * (1 + np.cos(np.pi * e / es)) * base_lr
+            assign_learning_rate(param_group, lr)
+    return _lr_adjuster
 
 
 class FinalModel(nn.Module):
@@ -221,8 +245,8 @@ class CLIP(ContinualModel):
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
-    def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
-        self.scheduler.step()
+    #def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
+        #self.scheduler.step()
 
     def begin_task(self, dataset):
         torch.cuda.empty_cache()
@@ -277,6 +301,8 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
+        num_batches = len(dataset.train_loader)
+        self.scheduler1 = cosine_lr(self.opt, self.args.lr, 500, self.args.n_epochs * num_batches)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
 
         self.train()
@@ -365,8 +391,9 @@ class CLIP(ContinualModel):
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
+        self.scheduler1(self.virtual_batch_counter)
 
-        if self.virtual_batch_counter == self.args.chunks:
+        if self.virtual_batch_counter % self.args.chunks == 0:
             self.opt.step()
             self.opt.zero_grad()
             self.virtual_batch_counter = 0
