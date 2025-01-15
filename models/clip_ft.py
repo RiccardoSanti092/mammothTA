@@ -391,9 +391,10 @@ class CLIP(ContinualModel):
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
-        self.scheduler1(self.virtual_batch_counter)
+
 
         if self.virtual_batch_counter % self.args.chunks == 0:
+            self.scheduler1(self.virtual_batch_counter)
             self.opt.step()
             self.opt.zero_grad()
             #self.virtual_batch_counter = 0
