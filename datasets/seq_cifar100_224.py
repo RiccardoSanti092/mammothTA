@@ -145,3 +145,7 @@ class SequentialCIFAR100224_5(SequentialCIFAR100224):
 
     def __init__(self, args, transform_type: str = 'weak'):
         super().__init__(args, transform_type)
+
+    @set_default_from_args("backbone")
+    def get_backbone():
+        return "vit"
