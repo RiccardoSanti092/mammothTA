@@ -253,6 +253,7 @@ class CLIP(ContinualModel):
         dataset.test_loaders[-1].dataset.transform = self.clip_transform
         dataset.train_loader.dataset.transform = self.clip_transform
         self.cur_offset = self.compute_offsets(self.current_task)
+
         if isinstance(dataset.N_CLASSES_PER_TASK, int):
             self.cpt = dataset.N_CLASSES_PER_TASK
         else:
@@ -346,6 +347,7 @@ class CLIP(ContinualModel):
         for i in range(len(self.delta_w)):
             task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
 
+        '''
         if self.current_task > 0:
             for key in self.merged_params:
                 self.merged_params[key].data = self.merged_params[key].data * self.current_task
@@ -355,6 +357,10 @@ class CLIP(ContinualModel):
         else:
             self.merged_params = task_vector_dict
             print("Media parametri aggiornata.")
+        '''
+
+        self.merged_params = task_vector_dict
+        print("Media parametri aggiornata.")
 
         self.opt.zero_grad()
         self.opt = None
@@ -386,7 +392,7 @@ class CLIP(ContinualModel):
 
             image_features = func.functional_call(self.net.visual_encoder, dict_param, inputs)
 
-        text_features = self.net.text_features[range(int(self.N_CLASSES / self.N_TASKS))]# TODO rischio bug incoming con cars196
+        text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
         similarity = (image_features @ text_features.T).softmax(dim=-1)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
