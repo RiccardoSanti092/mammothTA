@@ -221,8 +221,8 @@ class CLIP(ContinualModel):
     def begin_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
         torch.cuda.empty_cache()
 
-    #def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
-        #self.scheduler.step()
+    def end_epoch(self, epoch: int, dataset: ContinualDataset) -> None:
+        self.scheduler.step()
 
     def begin_task(self, dataset):
         torch.cuda.empty_cache()
@@ -277,7 +277,7 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
-        #self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
 
         self.train()
         self.virtual_batch_counter = 0
