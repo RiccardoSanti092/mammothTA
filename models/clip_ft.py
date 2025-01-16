@@ -320,18 +320,16 @@ class CLIP(ContinualModel):
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         backbone.to(dtype=torch.float32)
 
-        '''
-        task_vector_dict = {name: param_finetuned - param_pretrained
-                            for ((name, param_pretrained), (param_finetuned))
-                            in zip(backbone.visual.named_parameters(), self.delta_w)}
-        
-        
-        #torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
+        task_vector_dict = {}
+        for i in range(len(self.delta_w)):
+            task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
+
+        # torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
             if self.current_task > 0:
                 for key in self.merged_params:
-                    self.merged_params[key].data += task_vector_dict[key].data
+                    self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
                 print("Somma task vector aggiornata.")
             else:
                 self.merged_params = task_vector_dict
@@ -346,20 +344,6 @@ class CLIP(ContinualModel):
             else:
                 self.merged_params = task_vector_dict
                 print("Media parametri aggiornata.")
-        '''
-        task_vector_dict = {}
-        for i in range(len(self.delta_w)):
-            task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
-
-        if self.current_task > 0:
-            for key in self.merged_params:
-                self.merged_params[key].data = self.merged_params[key].data * self.current_task
-                self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
-                self.merged_params[key].data = self.merged_params[key].data / (self.current_task + 1)
-            print("Media parametri aggiornata.")
-        else:
-            self.merged_params = task_vector_dict
-            print("Media parametri aggiornata.")
 
         self.opt.zero_grad()
         self.opt = None
@@ -396,7 +380,7 @@ class CLIP(ContinualModel):
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
-
+        torch.nn.utils.clip_grad_norm_(self.delta_w, 1.0)
 
         if self.virtual_batch_counter % self.args.chunks == 0:
             self.scheduler1(self.virtual_batch_counter)
