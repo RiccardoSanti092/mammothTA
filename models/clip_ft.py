@@ -169,6 +169,7 @@ class FinalModel(nn.Module):
                 t_inputs = clip_model.encode_text(t_inputs)
                 t_inputs /= t_inputs.norm(dim=-1,
                                           keepdim=True)  # double normalization if use templates is expected (see https://github.dev/KaiyangZhou/CoOp)
+
                 text_inputs.append(t_inputs)
             text_features = torch.stack(text_inputs).mean(0)
         else:
@@ -198,6 +199,8 @@ class CLIP(ContinualModel):
                             help='Whether to save predictions of the TRAINING set after each task')
         parser.add_argument('--use_templates', type=binary_to_boolean_type, default=0,
                             help='Whether to use prompt templates for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
+        parser.add_argument('--use_heads', type=binary_to_boolean_type, default=0,
+                            help='Whether to use prompt templates to build classification heads for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
         parser.add_argument('--ft_linears', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune linear layers')
         parser.add_argument('--ft_attention', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune attention layers')
         parser.add_argument('--ft_ln', type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune layer norm')
