@@ -37,6 +37,7 @@ from typing import Iterable, Tuple
 from tqdm import tqdm
 import gc
 import numpy as np
+import open_clip
 
 from adamow import AdamW
 
@@ -213,6 +214,9 @@ class CLIP(ContinualModel):
         backbone, clip_transform = clip.load(args.clip_backbone, device=torch.device("cpu"))
         #clip.model.convert_weights(backbone)
 
+        _, train_preprocess, val_preporcess = open_clip.create_model_and_transforms(
+            'ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip')
+
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.net = FinalModel(backbone, dataset, args)
@@ -221,7 +225,7 @@ class CLIP(ContinualModel):
             param.requires_grad = False
         torch.backends.cuda.enable_mem_efficient_sdp(False)
 
-        self.clip_transform = clip_transform
+        self.clip_transform = train_preprocess
 
         self.predictions = []
         self.original_labels = []
