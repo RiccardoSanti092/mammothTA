@@ -3,6 +3,7 @@
 import logging
 from typing import Tuple
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
@@ -43,6 +44,7 @@ class SequentialCIFAR100224(ContinualDataset):
     N_CLASSES = 100
     SIZE = (224, 224)
     MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+
 
     TRANSFORM = transforms.Compose([
         transforms.RandomResizedCrop(224, interpolation=InterpolationMode.BICUBIC),
@@ -143,8 +145,37 @@ class SequentialCIFAR100224_5(SequentialCIFAR100224):
     N_CLASSES_PER_TASK = 20
     N_TASKS = 5
 
+
     def __init__(self, args, transform_type: str = 'weak'):
         super().__init__(args, transform_type)
+
+    @set_default_from_args("backbone")
+    def get_backbone():
+        return "vit"
+
+
+class SequentialCIFAR100224_5_permutato(SequentialCIFAR100224):
+    """
+    Subclass of SequentialCIFAR100224 with updated settings:
+        - NAME: 'seq-cifar100-224-5-permutato'
+        - N_CLASSES_PER_TASK: 20
+        - N_TASKS: 5
+    """
+
+    NAME = 'seq-cifar100-224-5-permutato'
+    N_CLASSES_PER_TASK = 20
+    N_TASKS = 5
+    targets = np.array([70, 89, 11, 13, 63, 53, 86, 57, 41, 43, 14, 98, 52, 73, 95, 96, 33, 16, 39, 74, 25, 88,
+                           35, 28, 79, 82, 72, 4, 30, 17, 59, 97, 36, 38, 29, 55, 83, 7, 22, 48, 19, 47, 2, 44, 67,
+                           71, 34, 84, 6, 46, 61, 8, 80, 10, 49, 15, 68, 9, 99, 40, 27, 45, 51, 37, 21, 64, 92, 24,
+                           60, 31, 5, 91, 93, 90, 65, 66, 77, 20, 58, 62, 23, 76, 75, 42, 0, 26, 87, 50, 3, 56, 81,
+                           1, 94, 69, 18, 78, 54, 12, 85, 32])
+
+
+    def __init__(self, args, transform_type: str = 'weak'):
+        args.class_order = self.targets
+        super().__init__(args, transform_type)
+
 
     @set_default_from_args("backbone")
     def get_backbone():
