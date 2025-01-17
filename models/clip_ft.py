@@ -38,6 +38,7 @@ from tqdm import tqdm
 import gc
 import numpy as np
 import open_clip
+from templates import get_templates
 
 from adamow import AdamW
 
@@ -118,6 +119,67 @@ def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, peft_type, d
 
     return params
 
+def build_classification_head(model, dataset, offset, eval=False):
+    template = get_templates(dataset.NAME)
+
+    classnames = dataset.class_names
+    backbone, _ = clip.load(model.args.clip_backbone, device=torch.device("cuda"))
+    backbone.to(dtype=torch.float32)
+
+    print('Building classification head.')
+    with torch.no_grad():
+        zeroshot_weights = []
+        for classname in tqdm(classnames):
+            texts = []
+            for t in template:
+                texts.append(t(classname))
+            texts = open_clip.tokenize(texts).to(model.device)  # tokenize
+            embeddings = backbone.encode_text(texts)  # embed with text encoder
+            embeddings /= embeddings.norm(dim=-1, keepdim=True)
+
+            embeddings = embeddings.mean(dim=0, keepdim=True)
+            embeddings /= embeddings.norm()
+
+            zeroshot_weights.append(embeddings)
+
+        zeroshot_weights = torch.stack(zeroshot_weights, dim=0).to(model.device)
+        zeroshot_weights = torch.transpose(zeroshot_weights, 0, 2)
+
+        zeroshot_weights *= model.net.logit_scale.exp()
+
+        zeroshot_weights = zeroshot_weights.squeeze().float()
+        zeroshot_weights = torch.transpose(zeroshot_weights, 0, 1)
+
+    if eval:
+        classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights[:][:offset[1]])
+    else:
+        classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights[:][offset[0]:offset[1]])
+
+    classification_head.requires_grad_(False)
+
+    return classification_head
+
+
+class ClassificationHead(torch.nn.Linear):
+    def __init__(self, normalize, weights, biases=None):
+        output_size, input_size = weights.shape
+        super().__init__(input_size, output_size)
+        self.normalize = normalize
+        if weights is not None:
+            self.weight = torch.nn.Parameter(weights.clone())
+        if biases is not None:
+            self.bias = torch.nn.Parameter(biases.clone())
+        else:
+            self.bias = torch.nn.Parameter(torch.zeros_like(self.bias, device=self.weight.device))
+
+    def forward(self, inputs):
+        if self.normalize:
+            inputs = inputs / inputs.norm(dim=-1, keepdim=True)
+        return super().forward(inputs)
+
+    def __call__(self, inputs):
+        return self.forward(inputs)
+
 
 def assign_learning_rate(param_group, new_lr):
     param_group["lr"] = new_lr
@@ -150,12 +212,14 @@ class FinalModel(nn.Module):
         clip_model.to(dtype=torch.float32)
 
         self.visual_encoder = deepcopy(clip_model.visual)
+        self.text_encoder = deepcopy(clip_model.transformer)
         self.dtype = torch.float32
         self.args = args
 
 
         self.classes = self.dataset.get_class_names()
         self.register_buffer("text_features", self.compute_text_embeddings(clip_model, self.classes))
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.task_id = 0
 
     @torch.no_grad()
@@ -269,6 +333,8 @@ class CLIP(ContinualModel):
         if self.current_task != 0:
             self.net.task_id += 1
 
+        self.cls_head = build_classification_head(self, dataset, self.cur_offset)
+
         print("\nRELOADING CLIP VISUAL ENCODER")
         self.net.visual_encoder = None
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
@@ -322,6 +388,8 @@ class CLIP(ContinualModel):
 
         backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
         backbone.to(dtype=torch.float32)
+
+        self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
 
         task_vector_dict = {}
         for i in range(len(self.delta_w)):
@@ -378,8 +446,9 @@ class CLIP(ContinualModel):
 
             image_features = func.functional_call(self.net.visual_encoder, dict_param, inputs)
 
-        text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
-        similarity = (image_features @ text_features.T).softmax(dim=-1)
+        #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
+        #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
+        similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
@@ -397,7 +466,8 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
-        similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
+        #similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
+        similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
 
