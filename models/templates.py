@@ -308,6 +308,7 @@ dataset_to_template = {
     'CIFAR10': cifar10_template,
     'CIFAR100': cifar100_template,
     'seq-cifar100-224-5': cifar100_template,
+    'seq-cifar100-224-5-permutato': cifar100_template,
     'CUB200': imagenet_template,  # TODO: experiment with the templates for this dataset???
     'CUB200CustomTemplates': cub200_template,
     'DomainNet': imagenet_template,  # TODO: experiment with the templates for this dataset???
