@@ -43,6 +43,14 @@ from templates import get_templates
 from adamow import AdamW
 
 
+def count_trainable_parameters(optimizer):
+    total_params = 0
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.requires_grad:  # Ensure the parameter is trainable
+                total_params += param.numel()  # Add the number of elements in this tensor
+    return total_params
+
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
     params = []
     for name, param in net.named_parameters():
@@ -375,6 +383,8 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
+        print(count_trainable_parameters(self.opt))
+
         num_batches = len(dataset.train_loader)
         self.scheduler1 = cosine_lr(self.opt, self.args.lr, 500, self.args.n_epochs * num_batches)
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
@@ -448,6 +458,7 @@ class CLIP(ContinualModel):
 
         #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
         #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
+        image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
