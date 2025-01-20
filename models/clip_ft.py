@@ -131,7 +131,7 @@ def build_classification_head(model, dataset, offset, eval=False):
     template = get_templates(dataset.NAME)
 
     classnames = dataset.class_names
-    backbone, _ = clip.load(model.args.clip_backbone, device=torch.device("cuda"))
+    backbone, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
     backbone.to(dtype=torch.float32)
 
     print('Building classification head.')
@@ -346,7 +346,7 @@ class CLIP(ContinualModel):
 
         print("\nRELOADING CLIP VISUAL ENCODER")
         self.net.visual_encoder = None
-        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device(self.args.device))
         self.net.visual_encoder = backbone.visual
         self.net.visual_encoder.to(dtype=torch.float32)
         for param in self.net.visual_encoder.parameters():
@@ -357,25 +357,25 @@ class CLIP(ContinualModel):
         self.delta_w_names = []
         for name, param in self.net.visual_encoder.named_parameters():
             if self.args.ft_linears and "mlp" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_attention and "attn" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_class_embed and "class_embed" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_conv and "conv" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_ln and "ln" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_pos_embed and "positional_embedding" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
             elif self.args.ft_proj and "proj" in name:
-                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = 'cuda'))
+                self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
 
         if self.args.optimizer == 'adamw':
@@ -399,7 +399,7 @@ class CLIP(ContinualModel):
         print("Current task:")
         print(self.current_task)
 
-        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device("cuda"))
+        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device(self.args.device))
         backbone.to(dtype=torch.float32)
 
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
