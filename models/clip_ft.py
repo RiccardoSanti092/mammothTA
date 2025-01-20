@@ -153,7 +153,7 @@ def build_classification_head(model, dataset, offset, eval=False):
         zeroshot_weights = torch.stack(zeroshot_weights, dim=0).to(model.device)
         zeroshot_weights = torch.transpose(zeroshot_weights, 0, 2)
 
-        zeroshot_weights *= model.net.logit_scale.exp()
+        zeroshot_weights *= 100.
 
         zeroshot_weights = zeroshot_weights.squeeze().float()
         zeroshot_weights = torch.transpose(zeroshot_weights, 0, 1)
