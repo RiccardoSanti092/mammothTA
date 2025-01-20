@@ -301,6 +301,7 @@ class CLIP(ContinualModel):
         torch.backends.cuda.enable_mem_efficient_sdp(False)
 
         self.clip_transform = train_preprocess
+        self.clip_eval_transform = val_preporcess
 
         self.predictions = []
         self.original_labels = []
@@ -329,7 +330,7 @@ class CLIP(ContinualModel):
 
     def begin_task(self, dataset):
         torch.cuda.empty_cache()
-        dataset.test_loaders[-1].dataset.transform = self.clip_transform
+        dataset.test_loaders[-1].dataset.transform = self.clip_eval_transform
         dataset.train_loader.dataset.transform = self.clip_transform
         self.cur_offset = self.compute_offsets(self.current_task)
 
@@ -351,6 +352,7 @@ class CLIP(ContinualModel):
         for param in self.net.visual_encoder.parameters():
             param.requires_grad = False
         print("\nCLIP VISUAL ENCODER RELOADED\n\n")
+
         self.delta_w = []
         self.delta_w_names = []
         for name, param in self.net.visual_encoder.named_parameters():
@@ -379,6 +381,7 @@ class CLIP(ContinualModel):
         if self.args.optimizer == 'adamw':
             self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
                                   weight_decay=self.args.optim_wd)
+
         else:
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
@@ -387,12 +390,12 @@ class CLIP(ContinualModel):
 
         num_batches = len(dataset.train_loader)
         self.scheduler1 = cosine_lr(self.opt, self.args.lr, 500, self.args.n_epochs * num_batches)
-        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(self.opt, T_max=self.args.n_epochs)
 
         self.train()
         self.virtual_batch_counter = 0
 
     def end_task(self, dataset: ContinualDataset) -> None:
+        print(f"seen classes {self.n_seen_classes}")
         print("Current task:")
         print(self.current_task)
 
@@ -463,13 +466,12 @@ class CLIP(ContinualModel):
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
         self.virtual_batch_counter += 1
-        torch.nn.utils.clip_grad_norm_(self.delta_w, 1.0)
 
         if self.virtual_batch_counter % self.args.chunks == 0:
+            torch.nn.utils.clip_grad_norm_(self.delta_w, 1.0)
             self.scheduler1(self.virtual_batch_counter)
             self.opt.step()
             self.opt.zero_grad()
-            #self.virtual_batch_counter = 0
 
         return loss.item()
 
@@ -477,7 +479,6 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
-        #similarity = (image_features @ self.net.text_features.T).softmax(dim=-1)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
