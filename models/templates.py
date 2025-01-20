@@ -319,6 +319,7 @@ dataset_to_template = {
     'GTSRB': gtsrb_template,
     'MNIST': mnist_template,
     'ImageNet': imagenet_template,
+    'seq-imagenet-r': imagenet_template,
     'ImageNetR': imagenet_template,
     'RESISC45': resisc45_template,
     'STL10': stl10_template,
