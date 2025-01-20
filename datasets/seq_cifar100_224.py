@@ -177,7 +177,7 @@ class SequentialCIFAR100224_5_permutato(SequentialCIFAR100224):
                          82, 34, 84, 52, 98])
 
     def __init__(self, args, transform_type: str = 'weak'):
-        args.class_order = self.targets1
+        args.class_order = self.targets
         super().__init__(args, transform_type)
 
 
