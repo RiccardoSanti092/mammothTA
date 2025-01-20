@@ -421,9 +421,12 @@ class CLIP(ContinualModel):
         else:
             if self.current_task > 0:
                 for key in self.merged_params:
+                    '''
                     self.merged_params[key].data = self.merged_params[key].data * self.current_task
                     self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
                     self.merged_params[key].data = self.merged_params[key].data / (self.current_task + 1)
+                    '''
+                    self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
                 print("Media parametri aggiornata.")
             else:
                 self.merged_params = task_vector_dict
@@ -438,7 +441,7 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
-                param.data = param.data + self.merged_params[name].data
+                param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
 
         torch.cuda.empty_cache()
         return super().end_task(dataset)
