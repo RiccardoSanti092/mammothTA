@@ -220,9 +220,9 @@ class FinalModel(nn.Module):
         clip_model.to(dtype=torch.float32)
 
         self.visual_encoder = deepcopy(clip_model.visual)
-        self.text_encoder = deepcopy(clip_model.transformer)
+        #self.text_encoder = deepcopy(clip_model.transformer)
         self.dtype = torch.float32
-        self.args = args
+        self.args = args #  TODO qui ho controllato i parametri dei clip model
 
 
         self.classes = self.dataset.get_class_names()
