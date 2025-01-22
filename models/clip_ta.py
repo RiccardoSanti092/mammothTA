@@ -448,7 +448,7 @@ class CLIP(ContinualModel):
 
         #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
         #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
-        #image_features = nn.functional.normalize(image_features, dim=-1)
+        image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
