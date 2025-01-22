@@ -136,10 +136,38 @@ def build_classification_head(model, dataset, offset, eval=False):
 
     clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
     clip_model_open.to(dtype=torch.float32)
+    clip_model_open.eval()
 
     print('Building classification head.')
     with torch.no_grad():
         zeroshot_weights = []
+
+        '''
+        zeroshot_weights_openAI = []
+        zeroshot_weights_openCLIP = []
+
+        for classnames in tqdm(classnames):
+            texts = []
+            for t in template:
+                texts.append(t(classnames))
+            texts = open_clip.tokenize(texts).to(model.device)
+            encoding_openCLIP = clip_model_open.encode_text(texts)
+            encoding_openAI = backbone.encode_text(texts)
+
+            norm_encoding_openCLIP = encoding_openCLIP / encoding_openCLIP.norm(dim=-1, keepdim=True)
+            norm_encoding_openAI = encoding_openAI / encoding_openAI.norm(dim=-1, keepdim=True)
+
+            mean_norm_encoding_openCLIP = norm_encoding_openCLIP.mean(dim=0, keepdim=True)
+            mean_norm_encoding_openAI = norm_encoding_openAI.mean(dim=0, keepdim=True)
+
+            norm_mean_norm_encoding_openCLIP = mean_norm_encoding_openCLIP / mean_norm_encoding_openCLIP.norm()
+            norm_mean_norm_encoding_openAI = mean_norm_encoding_openAI / mean_norm_encoding_openAI.norm()
+
+            zeroshot_weights_openCLIP.append(norm_mean_norm_encoding_openCLIP)
+            zeroshot_weights_openAI.append(norm_mean_norm_encoding_openAI)
+
+        '''
+
         for classname in tqdm(classnames):
             texts = []
             for t in template:
@@ -160,7 +188,6 @@ def build_classification_head(model, dataset, offset, eval=False):
 
         zeroshot_weights = zeroshot_weights.squeeze().float()
         zeroshot_weights = torch.transpose(zeroshot_weights, 0, 1)
-
     if eval:
         classification_head = ClassificationHead(normalize=True, weights=zeroshot_weights[:][:offset[1]])
     else:
@@ -229,7 +256,7 @@ class FinalModel(nn.Module):
 
 
         self.classes = self.dataset.get_class_names()
-        self.register_buffer("text_features", self.compute_text_embeddings(clip_model, self.classes))
+        #self.register_buffer("text_features", self.compute_text_embeddings(clip_model, self.classes))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.task_id = 0
 
@@ -467,7 +494,7 @@ class CLIP(ContinualModel):
 
         #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
         #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
-        image_features = nn.functional.normalize(image_features, dim=-1)
+        #image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
