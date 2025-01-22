@@ -134,6 +134,9 @@ def build_classification_head(model, dataset, offset, eval=False):
     backbone, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
     backbone.to(dtype=torch.float32)
 
+    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    clip_model_open.to(dtype=torch.float32)
+
     print('Building classification head.')
     with torch.no_grad():
         zeroshot_weights = []
@@ -142,7 +145,7 @@ def build_classification_head(model, dataset, offset, eval=False):
             for t in template:
                 texts.append(t(classname))
             texts = open_clip.tokenize(texts).to(model.device)  # tokenize
-            embeddings = backbone.encode_text(texts)  # embed with text encoder
+            embeddings = clip_model_open.encode_text(texts)  # embed with text encoder
             embeddings /= embeddings.norm(dim=-1, keepdim=True)
 
             embeddings = embeddings.mean(dim=0, keepdim=True)
