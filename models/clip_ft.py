@@ -131,42 +131,17 @@ def build_classification_head(model, dataset, offset, eval=False):
     template = get_templates(dataset.NAME)
 
     classnames = dataset.class_names
-    backbone, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
-    backbone.to(dtype=torch.float32)
+
+    #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
 
     clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
 
     print('Building classification head.')
     with torch.no_grad():
         zeroshot_weights = []
-
-        '''
-        zeroshot_weights_openAI = []
-        zeroshot_weights_openCLIP = []
-
-        for classnames in tqdm(classnames):
-            texts = []
-            for t in template:
-                texts.append(t(classnames))
-            texts = open_clip.tokenize(texts).to(model.device)
-            encoding_openCLIP = clip_model_open.encode_text(texts)
-            encoding_openAI = backbone.encode_text(texts)
-
-            norm_encoding_openCLIP = encoding_openCLIP / encoding_openCLIP.norm(dim=-1, keepdim=True)
-            norm_encoding_openAI = encoding_openAI / encoding_openAI.norm(dim=-1, keepdim=True)
-
-            mean_norm_encoding_openCLIP = norm_encoding_openCLIP.mean(dim=0, keepdim=True)
-            mean_norm_encoding_openAI = norm_encoding_openAI.mean(dim=0, keepdim=True)
-
-            norm_mean_norm_encoding_openCLIP = mean_norm_encoding_openCLIP / mean_norm_encoding_openCLIP.norm()
-            norm_mean_norm_encoding_openAI = mean_norm_encoding_openAI / mean_norm_encoding_openAI.norm()
-
-            zeroshot_weights_openCLIP.append(norm_mean_norm_encoding_openCLIP)
-            zeroshot_weights_openAI.append(norm_mean_norm_encoding_openAI)
-
-        '''
 
         for classname in tqdm(classnames):
             texts = []
@@ -451,11 +426,6 @@ class CLIP(ContinualModel):
         else:
             if self.current_task > 0:
                 for key in self.merged_params:
-                    '''
-                    self.merged_params[key].data = self.merged_params[key].data * self.current_task
-                    self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
-                    self.merged_params[key].data = self.merged_params[key].data / (self.current_task + 1)
-                    '''
                     self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
                 print("Media parametri aggiornata.")
             else:
