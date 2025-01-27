@@ -132,9 +132,9 @@ def build_classification_head(model, dataset, offset, eval=False):
 
     classnames = dataset.class_names
 
-    clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
+    #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
 
-    #clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
 
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
@@ -412,8 +412,6 @@ class CLIP(ContinualModel):
         task_vector_dict = {}
         for i in range(len(self.delta_w)):
             task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
-
-        # torch.save(task_vector_dict, f"C:\Riccardo\Dottorato\CGIL Variance Collapse\TASK VECTORS\\task_vector{self.current_task}.pt")
 
         if self.args.tangent:
             if self.current_task > 0:
