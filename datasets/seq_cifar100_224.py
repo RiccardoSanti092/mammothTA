@@ -1,5 +1,5 @@
 
-
+import open_clip
 import logging
 from typing import Tuple
 
@@ -45,7 +45,6 @@ class SequentialCIFAR100224(ContinualDataset):
     SIZE = (224, 224)
     MEAN, STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
-
     TRANSFORM = transforms.Compose([
         transforms.RandomResizedCrop(224, interpolation=InterpolationMode.BICUBIC),
         transforms.RandomHorizontalFlip(p=0.5),
@@ -77,7 +76,14 @@ class SequentialCIFAR100224(ContinualDataset):
     def get_data_loaders(self) -> Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader]:
         transform = self.TRANSFORM
 
-        test_transform = self.TEST_TRANSFORM
+        # test_transform = self.TEST_TRANSFORM
+
+        test_transform = transforms.Compose([transforms.Resize(size=224, interpolation="bicubic", max_size=None, antialias=True),
+                                            transforms.CenterCrop(size=(224, 224)),
+                                            transforms.ToTensor(),
+                                            transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))])
+        _, _, test_transform = open_clip.create_model_and_transforms(
+            'ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip')
 
         train_dataset = MyCIFAR100(base_path() + 'CIFAR100', train=True,
                                    download=True, transform=transform)
@@ -170,6 +176,7 @@ class SequentialCIFAR100224_5_permutato(SequentialCIFAR100224):
                            71, 34, 84, 6, 46, 61, 8, 80, 10, 49, 15, 68, 9, 99, 40, 27, 45, 51, 37, 21, 64, 92, 24,
                            60, 31, 5, 91, 93, 90, 65, 66, 77, 20, 58, 62, 23, 76, 75, 42, 0, 26, 87, 50, 3, 56, 81,
                            1, 94, 69, 18, 78, 54, 12, 85, 32])
+
     targets1 = np.array([84,91,42,88,27,70,48,37,51,57,53,2,97,3,10,55,17,29,94,40,
                          77,64,38,80,67,20,85,60,23,34,28,69,99,16,46,22,32,63,33,18,59,
                          8,83,9,43,61,49,41,39,54,87,62,12,5,96,35,89,7,78,30,68,50,79,4,65,
