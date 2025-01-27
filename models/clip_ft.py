@@ -132,9 +132,9 @@ def build_classification_head(model, dataset, offset, eval=False):
 
     classnames = dataset.class_names
 
-    #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
+    clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
 
-    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    #clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
 
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
