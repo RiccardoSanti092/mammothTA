@@ -291,7 +291,7 @@ class CLIP(ContinualModel):
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
-        backbone, clip_transform = clip.load(args.clip_backbone, device=torch.device("cpu"))
+        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=torch.device('cpu'))
         #clip.model.convert_weights(backbone)
 
         _, train_preprocess, val_preporcess = open_clip.create_model_and_transforms(
@@ -351,7 +351,9 @@ class CLIP(ContinualModel):
 
         print("\nRELOADING CLIP VISUAL ENCODER")
         self.net.visual_encoder = None
-        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device(self.args.device))
+        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
+                                                               cache_dir='checkpoints/ViT-B-16/cachedir/open_clip',
+                                                               device=torch.device(self.args.device))
         self.net.visual_encoder = backbone.visual
         self.net.visual_encoder.to(dtype=torch.float32)
         for param in self.net.visual_encoder.parameters():
@@ -404,7 +406,9 @@ class CLIP(ContinualModel):
         print("Current task:")
         print(self.current_task)
 
-        backbone, _ = clip.load(self.net.args.clip_backbone, device=torch.device(self.args.device))
+        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
+                                                               cache_dir='checkpoints/ViT-B-16/cachedir/open_clip',
+                                                               device=torch.device(self.args.device))
         backbone.to(dtype=torch.float32)
 
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
