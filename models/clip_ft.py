@@ -129,12 +129,10 @@ def get_delta_w_parameterlist(named_params, delta_w, delta_w_names, peft_type, d
 
 def build_classification_head(model, dataset, offset, eval=False):
     template = get_templates(dataset.NAME)
-
     classnames = dataset.class_names
 
     #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
-
-    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=model.args.device)
 
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
@@ -158,9 +156,7 @@ def build_classification_head(model, dataset, offset, eval=False):
 
         zeroshot_weights = torch.stack(zeroshot_weights, dim=0).to(model.device)
         zeroshot_weights = torch.transpose(zeroshot_weights, 0, 2)
-
         zeroshot_weights *= 100.
-
         zeroshot_weights = zeroshot_weights.squeeze().float()
         zeroshot_weights = torch.transpose(zeroshot_weights, 0, 1)
     if eval:
@@ -171,7 +167,6 @@ def build_classification_head(model, dataset, offset, eval=False):
     classification_head.requires_grad_(False)
 
     return classification_head
-
 
 class ClassificationHead(torch.nn.Linear):
     def __init__(self, normalize, weights, biases=None):
@@ -289,7 +284,7 @@ class CLIP(ContinualModel):
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
-        backbone, train_preprocess, val_preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=torch.device('cpu'))
+        backbone, train_preprocess, val_preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=torch.device('cpu'))
 
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
@@ -346,7 +341,6 @@ class CLIP(ContinualModel):
         print("\nRELOADING CLIP VISUAL ENCODER")
         self.net.visual_encoder = None
         backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
-                                                               cache_dir='checkpoints/ViT-B-16/cachedir/open_clip',
                                                                device=torch.device(self.args.device))
         self.net.visual_encoder = backbone.visual
         self.net.visual_encoder.to(dtype=torch.float32)
@@ -401,7 +395,6 @@ class CLIP(ContinualModel):
         print(self.current_task)
 
         backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
-                                                               cache_dir='checkpoints/ViT-B-16/cachedir/open_clip',
                                                                device=torch.device(self.args.device))
         backbone.to(dtype=torch.float32)
 
@@ -462,7 +455,7 @@ class CLIP(ContinualModel):
 
         #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
         #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
-        #image_features = nn.functional.normalize(image_features, dim=-1)
+        image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
         loss.backward()
@@ -480,6 +473,7 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
+        image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
