@@ -225,13 +225,11 @@ class FinalModel(nn.Module):
         clip_model.to(dtype=torch.float32)
 
         self.visual_encoder = deepcopy(clip_model.visual)
-        #self.text_encoder = deepcopy(clip_model.transformer)
         self.dtype = torch.float32
-        self.args = args #  TODO qui ho controllato i parametri dei clip model
+        self.args = args
 
 
         self.classes = self.dataset.get_class_names()
-        #self.register_buffer("text_features", self.compute_text_embeddings(clip_model, self.classes))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
         self.task_id = 0
 
@@ -291,11 +289,7 @@ class CLIP(ContinualModel):
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
-        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=torch.device('cpu'))
-        #clip.model.convert_weights(backbone)
-
-        _, train_preprocess, val_preporcess = open_clip.create_model_and_transforms(
-            'ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip')
+        backbone, train_preprocess, val_preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=torch.device('cpu'))
 
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
@@ -306,7 +300,7 @@ class CLIP(ContinualModel):
         torch.backends.cuda.enable_mem_efficient_sdp(False)
 
         self.clip_transform = train_preprocess
-        self.clip_eval_transform = val_preporcess
+        self.clip_eval_transform = val_preprocess
 
         self.predictions = []
         self.original_labels = []
@@ -401,7 +395,7 @@ class CLIP(ContinualModel):
         self.train()
         self.virtual_batch_counter = 0
 
-    def end_task(self, dataset: ContinualDataset) -> None:
+    def end_task(self, dataset: ContinualDataset) -> None: #TODO  set the model in eval mode
         print(f"seen classes {self.n_seen_classes}")
         print("Current task:")
         print(self.current_task)
@@ -446,7 +440,9 @@ class CLIP(ContinualModel):
                 param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
 
         torch.cuda.empty_cache()
+        self.eval()
         return super().end_task(dataset)
+
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
 
@@ -486,7 +482,6 @@ class CLIP(ContinualModel):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
-
 
     def get_debug_iters(self):
         return 20
