@@ -42,15 +42,6 @@ from templates import get_templates
 
 from adamow import AdamW
 
-
-def count_trainable_parameters(optimizer):
-    total_params = 0
-    for group in optimizer.param_groups:
-        for param in group['params']:
-            if param.requires_grad:  # Ensure the parameter is trainable
-                total_params += param.numel()  # Add the number of elements in this tensor
-    return total_params
-
 def get_params(net, features=True, classifier=False, offset_1=-1, offset_2=-1) -> torch.Tensor:
     params = []
     for name, param in net.named_parameters():
@@ -381,8 +372,6 @@ class CLIP(ContinualModel):
             self.opt = optim.SGD(self.delta_w, lr=self.args.lr,
                                  momentum=self.args.optim_mom)
 
-        print(count_trainable_parameters(self.opt))
-
         num_batches = len(dataset.train_loader)
         self.scheduler1 = cosine_lr(self.opt, self.args.lr, 500, self.args.n_epochs * num_batches)
 
@@ -390,9 +379,7 @@ class CLIP(ContinualModel):
         self.virtual_batch_counter = 0
 
     def end_task(self, dataset: ContinualDataset) -> None: #TODO  set the model in eval mode
-        print(f"seen classes {self.n_seen_classes}")
-        print("Current task:")
-        print(self.current_task)
+        print(f"Current task: {self.current_task}")
 
         backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
                                                                device=torch.device(self.args.device))
@@ -473,7 +460,7 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
-        image_features = nn.functional.normalize(image_features, dim=-1)
+
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
