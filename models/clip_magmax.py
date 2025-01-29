@@ -133,13 +133,13 @@ def build_classification_head(model, dataset, offset, eval=False):
     template = get_templates(dataset.NAME)
 
     classnames = dataset.class_names
-    #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
-    #clip_model_open.to(dtype=torch.float32)
-    #clip_model_open.eval()
-
-    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
+
+    #clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', cache_dir='checkpoints/ViT-B-16/cachedir/open_clip', device=model.args.device)
+    #clip_model_open.to(dtype=torch.float32)
+    #clip_model_open.eval()
 
     print('Building classification head.')
     with torch.no_grad():
@@ -331,14 +331,7 @@ class CLIP(ContinualModel):
 
             self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
 
-        count = 0
-        for name, param in self.net.visual_encoder.named_parameters():
-            if (f"model.visual.{name}") in self.merged_params:
-                nome = f"model.visual.{name}"
-                count += 1
-                param.data = param.data + (self.merged_params[nome].data / (self.current_task + 1))
-
-        print(count, self.current_task)
+        print(f"Task number {self.current_task+1}")
         self.counter = 0
 
         state_dict_list = []
@@ -359,12 +352,13 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
-        torch.save(image_features, f"C:\\Riccardo\\Dottorato\\CGIL Variance Collapse\\mammothTA\\cache\\test_visual_embeds\\batch_{self.counter}_mio.pt")
+        #torch.save(image_features, f"C:\\Riccardo\\Dottorato\\CGIL Variance Collapse\\mammothTA\\cache\\test_visual_embeds\\batch_{self.counter}_mio.pt")
         #check = torch.load(f"C:\\Riccardo\\Dottorato\\CGIL Variance Collapse\\mammothTA\\cache\\test_visual_embeds\\batch_{self.counter}.pt")
         #try:
         #    print(torch.abs(check - image_features))
         #except RuntimeError as e:
         #    print("shape.mismatch")
+        image_features = nn.functional.normalize(image_features, dim=-1)
         self.counter += 1
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
