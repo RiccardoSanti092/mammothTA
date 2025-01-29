@@ -460,7 +460,7 @@ class CLIP(ContinualModel):
     @torch.no_grad()
     def forward(self, x):
         image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
-
+        image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
