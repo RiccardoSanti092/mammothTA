@@ -32,7 +32,7 @@ from utils.args import ArgumentParser
 from utils.conf import get_device
 from copy import deepcopy
 from torch import optim
-from torch import func
+import torch.func as func
 from typing import Iterable, Tuple
 from tqdm import tqdm
 import gc
@@ -122,8 +122,8 @@ def build_classification_head(model, dataset, offset, eval=False):
     template = get_templates(dataset.NAME)
     classnames = dataset.class_names
 
-    #clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
-    clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=model.args.device)
+    clip_model_open, _ = clip.load(model.args.clip_backbone, device=torch.device(model.args.device))
+    #clip_model_open, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=model.args.device)
 
     clip_model_open.to(dtype=torch.float32)
     clip_model_open.eval()
@@ -275,7 +275,9 @@ class CLIP(ContinualModel):
         return parser
 
     def __init__(self, backbone, loss, args, transform, dataset=None):
-        backbone, train_preprocess, val_preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=torch.device('cpu'))
+        _, train_preprocess, val_preprocess = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=torch.device('cpu'))
+
+        backbone, _ = clip.load(args.clip_backbone, device=torch.device('cpu'))
 
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
@@ -284,6 +286,7 @@ class CLIP(ContinualModel):
         for name, param in self.net.named_parameters():
             param.requires_grad = False
         torch.backends.cuda.enable_mem_efficient_sdp(False)
+
 
         self.clip_transform = train_preprocess
         self.clip_eval_transform = val_preprocess
@@ -331,8 +334,10 @@ class CLIP(ContinualModel):
 
         print("\nRELOADING CLIP VISUAL ENCODER")
         self.net.visual_encoder = None
-        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
-                                                               device=torch.device(self.args.device))
+        #backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=torch.device(self.args.device))
+
+        backbone, _ = clip.load(self.args.clip_backbone, device=torch.device(self.args.device))
+
         self.net.visual_encoder = backbone.visual
         self.net.visual_encoder.to(dtype=torch.float32)
         for param in self.net.visual_encoder.parameters():
@@ -381,8 +386,9 @@ class CLIP(ContinualModel):
     def end_task(self, dataset: ContinualDataset) -> None: #TODO  set the model in eval mode
         print(f"Current task: {self.current_task}")
 
-        backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai',
-                                                               device=torch.device(self.args.device))
+        #backbone, _, _ = open_clip.create_model_and_transforms('ViT-B-16', pretrained='openai', device=torch.device(self.args.device))
+        backbone, _ = clip.load(self.args.clip_backbone, device=torch.device(self.args.device))
+
         backbone.to(dtype=torch.float32)
 
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
