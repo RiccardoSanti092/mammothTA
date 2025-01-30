@@ -280,7 +280,7 @@ class CLIP(ContinualModel):
         super().__init__(backbone, loss, args, transform, dataset=dataset)
 
         self.net = FinalModel(backbone, dataset, args)
-        self.param_names = [name for name, _ in self.net.named_parameters()]
+        self.param_names = [name for name, _ in self.net.visual_encoder.named_parameters()]
         for name, param in self.net.named_parameters():
             param.requires_grad = False
         torch.backends.cuda.enable_mem_efficient_sdp(False)
@@ -408,6 +408,7 @@ class CLIP(ContinualModel):
                 self.merged_params = task_vector_dict
                 print("Media parametri aggiornata.")
 
+
         self.opt.zero_grad()
         self.opt = None
         del self.opt, self.delta_w, self.delta_w_names
@@ -417,21 +418,35 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
-                param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+                if self.args.tangent:
+                    param.data = param.data + self.merged_params[name].data
+                else:
+                    param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+
+        self.tangent_4_forward = []
+        for key in self.merged_params:
+            self.tangent_4_forward.append(self.merged_params[key])
+
 
         torch.cuda.empty_cache()
         self.eval()
         return super().end_task(dataset)
 
 
+
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
 
         if self.args.tangent:
-            def func_network(param_values):
-                param = {name: param for name, param in zip(self.param_names, param_values)}
-                return func.functional_call(self.net, param, inputs)
 
-            image_features, jvp = func.jvp(func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.delta_w),),)
+            def func_network(param_values):
+                param = {name: param for name, param in zip(self.delta_w_names, param_values)}
+                return func.functional_call(self.net.visual_encoder, param, inputs)
+
+            tunable_params = [p for n, p in self.net.visual_encoder.named_parameters() if n in self.delta_w_names]
+            dict_param = {name: param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)}
+            params = [param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)]
+
+            image_features, jvp = func.jvp(func_network, (tuple(params),), (tuple(self.delta_w),),)
             image_features = image_features + jvp
         else:
 
@@ -440,8 +455,6 @@ class CLIP(ContinualModel):
 
             image_features = func.functional_call(self.net.visual_encoder, dict_param, inputs)
 
-        #text_features = self.net.text_features[self.cur_offset[0]:self.cur_offset[1]]# TODO rischio bug incoming con cars196
-        #similarity = 100 * (image_features @ text_features.T).softmax(dim=-1)
         image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         loss = self.loss(similarity, (labels % int(self.N_CLASSES / self.N_TASKS))) / self.args.chunks
@@ -459,10 +472,19 @@ class CLIP(ContinualModel):
 
     @torch.no_grad()
     def forward(self, x):
-        image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
+
+        if self.args.tangent:
+            def func_network(param_values):
+                param = {name: param for name, param in zip(self.param_names, param_values)}
+                return func.functional_call(self.net.visual_encoder, param, x)
+
+            image_features, jvp = func.jvp(func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.tangent_4_forward),), )
+            image_features = image_features + jvp
+        else:
+            image_features = func.functional_call(self.net, {name: param for name, param in self.net.named_parameters()}, x)
         image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
 
     def get_debug_iters(self):
-        return 20
+        return 128
