@@ -424,10 +424,7 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = backbone.visual
         for name, param in self.net.visual_encoder.named_parameters():
             if name in self.merged_params:
-                if self.args.tangent:
-                    param.data = param.data + self.merged_params[name].data
-                else:
-                    param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+                param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
 
         self.tangent_4_forward = []
         for key in self.merged_params:
