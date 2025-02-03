@@ -426,10 +426,11 @@ class CLIP(ContinualModel):
             if name in self.merged_params:
                 param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
 
+        need_4_name = deepcopy(self.merged_params)
         self.tangent_4_forward = []
-        for key in self.merged_params:
-            self.merged_params[key].data /= (self.current_task + 1)
-            self.tangent_4_forward.append(self.merged_params[key])  #TODO maybe anche qui fai la media per il numero di task
+        for key in need_4_name:
+            need_4_name /=  (self.current_task + 1)
+            self.tangent_4_forward.append(need_4_name[key])  #TODO maybe anche qui fai la media per il numero di task
 
 
 
