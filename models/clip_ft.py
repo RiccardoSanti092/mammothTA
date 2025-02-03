@@ -428,7 +428,7 @@ class CLIP(ContinualModel):
 
         self.tangent_4_forward = []
         for key in self.merged_params:
-            self.tangent_4_forward.append(self.merged_params[key])
+            self.tangent_4_forward.append(self.merged_params[key])  #TODO maybe anche qui fai la media per il numero di task
 
 
         torch.cuda.empty_cache()
