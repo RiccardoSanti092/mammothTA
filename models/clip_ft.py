@@ -422,15 +422,16 @@ class CLIP(ContinualModel):
 
         self.net.visual_encoder = None
         self.net.visual_encoder = backbone.visual
-        for name, param in self.net.visual_encoder.named_parameters():
-            if name in self.merged_params:
-                param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
-
-        need_4_name = deepcopy(self.merged_params)
-        self.tangent_4_forward = []
-        for key in need_4_name:
-            need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
-            self.tangent_4_forward.append(need_4_name[key])  #TODO maybe funzia meglio senza la mediata
+        if not self.args.tangent:
+            for name, param in self.net.visual_encoder.named_parameters():
+                if name in self.merged_params:
+                    param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+        else:
+            need_4_name = deepcopy(self.merged_params)
+            self.tangent_4_forward = []
+            for key in need_4_name:
+                need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
+                self.tangent_4_forward.append(need_4_name[key])  #TODO maybe funzia meglio senza la mediata
 
 
 
