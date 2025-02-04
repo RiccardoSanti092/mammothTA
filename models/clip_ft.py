@@ -39,6 +39,9 @@ import gc
 import numpy as np
 import open_clip
 from templates import get_templates
+from pathlib import Path
+import os
+
 
 from adamow import AdamW
 
@@ -400,6 +403,14 @@ class CLIP(ContinualModel):
         task_vector_dict = {}
         for i in range(len(self.delta_w)):
             task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
+
+        text_correction = self.args.clip_backbone
+
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}")
+        if not tv_path.exists():
+            tv_path.mkdir(parents=True, exist_ok=True)
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}/{self.current_task}.pt")
+        torch.save(task_vector_dict, tv_path)
 
         if self.args.tangent:
             if self.current_task > 0:
