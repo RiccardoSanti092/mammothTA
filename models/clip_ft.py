@@ -423,10 +423,12 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = None
         self.net.visual_encoder = backbone.visual
         if not self.args.tangent:
+            print("FUCK TANGENTEEEEEE")
             for name, param in self.net.visual_encoder.named_parameters():
                 if name in self.merged_params:
                     param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
         else:
+            print("STIAMO TANGENTANDO")
             need_4_name = deepcopy(self.merged_params)
             self.tangent_4_forward = []
             for key in need_4_name:
@@ -451,7 +453,8 @@ class CLIP(ContinualModel):
 
             tunable_params = [p for n, p in self.net.visual_encoder.named_parameters() if n in self.delta_w_names]
             dict_param = {name: param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)}
-            params = [param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)]
+            #params = [param + net_param for name, param, net_param in zip(self.delta_w_names, self.delta_w, tunable_params)]
+            params = [param for name, param in self.net.visual_encoder.named_parameters()]
 
             image_features, jvp = func.jvp(func_network, (tuple(params),), (tuple(self.delta_w),),)
             image_features = image_features + jvp
