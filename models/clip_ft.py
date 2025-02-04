@@ -368,6 +368,10 @@ class CLIP(ContinualModel):
             elif self.args.ft_proj and "proj" in name:
                 self.delta_w.append(torch.zeros_like(param, dtype = torch.float32, requires_grad = True, device = self.args.device))
                 self.delta_w_names.append(name)
+            else:
+                self.delta_w.append(torch.zeros_like(param, dtype=torch.float32, requires_grad=False, device=self.args.device))
+                self.delta_w_names.append(name) #TODO QUESTA É UNA SOLUZIONE NON PULITA
+
 
         if self.args.optimizer == 'adamw':
             self.opt = optim.AdamW(self.delta_w, lr=self.args.lr,
@@ -423,24 +427,19 @@ class CLIP(ContinualModel):
         self.net.visual_encoder = None
         self.net.visual_encoder = backbone.visual
         if not self.args.tangent:
-            print("FUCK TANGENTEEEEEE")
             for name, param in self.net.visual_encoder.named_parameters():
                 if name in self.merged_params:
                     param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
         else:
-            print("STIAMO TANGENTANDO")
             need_4_name = deepcopy(self.merged_params)
             self.tangent_4_forward = []
             for key in need_4_name:
                 need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
-                self.tangent_4_forward.append(need_4_name[key])  #TODO maybe funzia meglio senza la mediata
-
-
+                self.tangent_4_forward.append(need_4_name[key])
 
         torch.cuda.empty_cache()
         self.eval()
         return super().end_task(dataset)
-
 
 
     def observe(self, inputs, labels, not_aug_inputs, epoch=None):
