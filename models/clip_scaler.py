@@ -170,7 +170,7 @@ class CLIP(ContinualModel):
         parser.add_argument('--test_single_task',  type=binary_to_boolean_type, default=0, help='Set to 1 to test single tasks')
         parser.add_argument('--scaler_value', type=float, default=1.0, help='define the coefficient used to scale the task vectors')
         parser.add_argument('--epochs', type=int, help="number of training epochs used during finetuning")
-        #parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
+        parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
 
         return parser
 
@@ -204,7 +204,7 @@ class CLIP(ContinualModel):
         backbone.to(dtype=torch.float32)
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
 
-        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.epochs}/{self.current_task}.pt")
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}/{self.current_task}.pt")
         print(tv_path)
         task_vector_dict = torch.load(tv_path)
 
@@ -222,26 +222,33 @@ class CLIP(ContinualModel):
 
         self.net.visual_encoder = None
         self.net.visual_encoder = backbone.visual
-        need_4_name = deepcopy(self.merged_params)
-        self.tangent_4_forward = []
-        for key in need_4_name:
-            need_4_name[key] = (need_4_name[key].data / (self.current_task + 1)) * self.args.scaler_value
-            self.tangent_4_forward.append(need_4_name[key])
+        if not self.args.tangent:
+            for name, param in self.net.visual_encoder.named_parameters():
+                if name in self.merged_params:
+                    param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+        else:
+            need_4_name = deepcopy(self.merged_params)
+            self.tangent_4_forward = []
+            for key in need_4_name:
+                need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
+                self.tangent_4_forward.append(need_4_name[key])
 
         torch.cuda.empty_cache()
         self.eval()
         return super().end_task(dataset)
 
     def forward(self, x):
+        if self.args.tangent:
+            def func_network(param_values):
+                param = {name: param for name, param in zip(self.param_names, param_values)}
+                return func.functional_call(self.net.visual_encoder, param, x)
 
-
-        def func_network(param_values):
-            param = {name: param for name, param in zip(self.param_names, param_values)}
-            return func.functional_call(self.net.visual_encoder, param, x)
-
-        image_features, jvp = func.jvp(func_network, (tuple(self.net.visual_encoder.parameters()),), (tuple(self.tangent_4_forward),), )
-        image_features = image_features + jvp
-
+            image_features, jvp = func.jvp(func_network, (tuple(self.net.visual_encoder.parameters()),),
+                                           (tuple(self.tangent_4_forward),), )
+            image_features = image_features + jvp
+        else:
+            image_features = func.functional_call(self.net,
+                                                  {name: param for name, param in self.net.named_parameters()}, x)
         image_features = nn.functional.normalize(image_features, dim=-1)
         similarity = self.cls_head(image_features)
         return similarity[:, :self.n_seen_classes]
