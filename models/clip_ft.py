@@ -407,7 +407,7 @@ class CLIP(ContinualModel):
 
         text_correction = self.args.clip_backbone
 
-        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}")
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}")
         if not tv_path.exists():
             tv_path.mkdir(parents=True, exist_ok=True)
         tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}/{self.current_task}.pt")
