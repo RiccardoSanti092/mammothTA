@@ -204,7 +204,7 @@ class CLIP(ContinualModel):
         backbone.to(dtype=torch.float32)
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
 
-        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}/{self.current_task}.pt")
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.epochs}_{self.args.tangent}/{self.current_task}.pt")
         print(tv_path)
         task_vector_dict = torch.load(tv_path)
 
