@@ -169,6 +169,7 @@ class CLIP(ContinualModel):
                             help='Whether to use prompt templates to build classification heads for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
         parser.add_argument('--test_single_task',  type=binary_to_boolean_type, default=0, help='Set to 1 to test single tasks')
         parser.add_argument('--scaler_value', type=float, default=1.0, help='define the coefficient used to scale the task vectors')
+        parser.add_argument('--epochs', type=int, help="number of training epochs used during finetuning")
         #parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
 
         return parser
@@ -203,7 +204,7 @@ class CLIP(ContinualModel):
         backbone.to(dtype=torch.float32)
         self.cls_head = build_classification_head(self, dataset, self.cur_offset, eval=True)
 
-        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}/{self.current_task}.pt")
+        tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.epochs}/{self.current_task}.pt")
         print(tv_path)
         task_vector_dict = torch.load(tv_path)
 
