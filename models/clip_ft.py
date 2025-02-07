@@ -405,13 +405,15 @@ class CLIP(ContinualModel):
             self.delta_w[i].requires_grad = False
             task_vector_dict[self.delta_w_names[i]] = self.delta_w[i]
 
-        text_correction = self.args.clip_backbone
-
+        tv = deepcopy(task_vector_dict)
+        for k in tv:
+            tv[k] = tv[k].to(device='cpu')
         tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}")
         if not tv_path.exists():
             tv_path.mkdir(parents=True, exist_ok=True)
         tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.n_epochs}_{self.args.tangent}/{self.current_task}.pt")
-        torch.save(task_vector_dict, tv_path)
+        torch.save(tv, tv_path)
+        del tv
 
         if self.current_task > 0:
             for key in self.merged_params:

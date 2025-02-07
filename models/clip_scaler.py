@@ -222,6 +222,8 @@ class CLIP(ContinualModel):
         tv_path = Path(f"./cache/{self.args.clip_backbone}_{self.args.dataset}_{self.N_TASKS}_{self.args.optimizer}_{self.args.lr}_{self.args.optim_wd}_{self.args.epochs}_{self.args.tangent}/{self.current_task}.pt")
         print(tv_path)
         task_vector_dict = torch.load(tv_path)
+        for k in task_vector_dict:
+            task_vector_dict[k] = task_vector_dict[k].to(device=self.args.device)
 
         if self.args.test_single_task:
             self.merged_params = task_vector_dict
