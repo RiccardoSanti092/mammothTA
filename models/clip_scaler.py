@@ -239,7 +239,6 @@ class CLIP(ContinualModel):
                     self.merged_params = task_vector_dict
                     for k in self.merged_params:
                         self.merged_params[k].data *= 0
-                        print(self.merged_params[k]) #TODO DA ELIMINARE SE FUNCHIA
 
         elif self.args.test_0_shot:
             print("Testing 0-shot so i'm doing nothing.")
