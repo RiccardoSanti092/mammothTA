@@ -167,10 +167,14 @@ class CLIP(ContinualModel):
                             help='Whether to use prompt templates for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
         parser.add_argument('--use_heads', type=binary_to_boolean_type, default=0,
                             help='Whether to use prompt templates to build classification heads for CLIP. NOTE: Datasets NEED to have a `get_prompt_templates` method implemented.')
-        parser.add_argument('--test_single_task',  type=binary_to_boolean_type, default=0, help='Set to 1 to test single tasks')
-        parser.add_argument('--scaler_value', type=float, default=1.0, help='define the coefficient used to scale the task vectors')
-        parser.add_argument('--epochs', type=int, help="number of training epochs used during finetuning")
-        parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane')
+        parser.add_argument('--test_single_task',  type=binary_to_boolean_type, default=0, help='Set to 1 to test single tasks.')
+        parser.add_argument('--test_0_shot', type=binary_to_boolean_type, default=0, help='Set to 1 to test the 0-shot version.')
+        parser.add_argument('--test_unlearning', type=binary_to_boolean_type, default=0, help='Set to 1 to test unlearning.')
+        parser.add_argument('--test_full', type=binary_to_boolean_type, default=1, help='Set to 0 to make a mess')
+        parser.add_argument('--ut', type=int, default=None, help='Sets the task you want to test the unlearning with.')
+        parser.add_argument('--scaler_value', type=float, default=1.0, help='define the coefficient used to scale the task vectors.')
+        parser.add_argument('--epochs', type=int, help="number of training epochs used during finetuning.")
+        parser.add_argument('--tangent',  type=binary_to_boolean_type, default=0, help='Set to 1 fine-tune on the tangent hyperplane.')
 
         return parser
 
@@ -186,13 +190,24 @@ class CLIP(ContinualModel):
         for name, param in self.net.named_parameters():
             param.requires_grad = False
         torch.backends.cuda.enable_mem_efficient_sdp(False)
-
+        self.merged_params = None
 
         self.clip_transform = train_preprocess
         self.clip_eval_transform = val_preprocess
 
         self.predictions = []
         self.original_labels = []
+        self.count = 0
+        if self.args.test_single_task:
+            self.count += 1
+        if self.args.test_0_shot:
+            self.count += 1
+        if self.args.test_unlearning:
+            self.count += 1
+        if self.count > 1:
+            print("!!!### TESTING TOO MANY THINGS ###!!!")
+            print(self.count)
+
 
     def begin_task(self, dataset):
         print("BEGIN TASK")
@@ -211,7 +226,23 @@ class CLIP(ContinualModel):
         if self.args.test_single_task:
             self.merged_params = task_vector_dict
             print("Media parametri aggiornata single task.")
-        else:
+
+        elif self.args.test_unlearning:
+            if self.args.ut == self.current_task:
+                self.merged_params = task_vector_dict
+            else:
+                if self.merged_params == None:
+                    self.merged_params = task_vector_dict
+                    for k in self.merged_params:
+                        self.merged_params[k].data *= 0
+                else:
+                    for k in task_vector_dict:
+                        self.merged_params[k].data += task_vector_dict[k].data * 0
+
+        elif self.args.test_0_shot:
+            print("Testing 0-shot so i'm doing nothing.")
+
+        elif self.args.test_full:
             if self.current_task > 0:
                 for key in self.merged_params:
                     self.merged_params[key].data = self.merged_params[key].data + task_vector_dict[key].data
@@ -222,23 +253,53 @@ class CLIP(ContinualModel):
 
         self.net.visual_encoder = None
         self.net.visual_encoder = backbone.visual
-        if not self.args.tangent:
-            for name, param in self.net.visual_encoder.named_parameters():
-                if name in self.merged_params:
-                    param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
-        else:
-            need_4_name = deepcopy(self.merged_params)
-            self.tangent_4_forward = []
-            for key in need_4_name:
-                need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
-                self.tangent_4_forward.append(need_4_name[key])
+
+        if self.args.test_0_shot:
+            print("As already said i'm testing in 0-shot")
+
+        elif self.args.test_unlearning:
+            print("testing unlearning")
+            if not self.args.tangent:
+                for name, param in self.net.visual_encoder.named_parameters():
+                    if name in self.merged_params:
+                        param.data = param.data - self.merged_params[name].data
+            else:
+                need_4_name = deepcopy(self.merged_params)
+                self.tangent_4_forward = []
+                for key in need_4_name:
+                    self.tangent_4_forward.append(-1 * need_4_name[key])
+
+        elif self.args.test_single_task:
+            print("testing single task")
+            if not self.args.tangent:
+                for name, param in self.net.visual_encoder.named_parameters():
+                    if name in self.merged_params:
+                        param.data = param.data + self.merged_params[name].data
+            else:
+                need_4_name = deepcopy(self.merged_params)
+                self.tangent_4_forward = []
+                for key in need_4_name:
+                    self.tangent_4_forward.append(need_4_name[key])
+
+        elif self.args.test_full:
+            print("no testing")
+            if not self.args.tangent:
+                for name, param in self.net.visual_encoder.named_parameters():
+                    if name in self.merged_params:
+                        param.data = param.data + (self.merged_params[name].data / (self.current_task + 1))
+            else:
+                need_4_name = deepcopy(self.merged_params)
+                self.tangent_4_forward = []
+                for key in need_4_name:
+                    need_4_name[key] = need_4_name[key].data / (self.current_task + 1)
+                    self.tangent_4_forward.append(need_4_name[key])
 
         torch.cuda.empty_cache()
         self.eval()
         return super().end_task(dataset)
 
     def forward(self, x):
-        if self.args.tangent:
+        if self.args.tangent and not self.args.test_0_shot:
             def func_network(param_values):
                 param = {name: param for name, param in zip(self.param_names, param_values)}
                 return func.functional_call(self.net.visual_encoder, param, x)
