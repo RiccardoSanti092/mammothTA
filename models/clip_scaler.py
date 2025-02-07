@@ -231,15 +231,15 @@ class CLIP(ContinualModel):
 
         elif self.args.test_unlearning:
             if self.args.ut == self.current_task:
+                print("AGGIORNO MERGED PARAMS CON IL TASK VECTOR DA SOTTRARRE")
                 self.merged_params = task_vector_dict
             else:
                 if self.merged_params == None:
+                    print('INIZIALIZZO MERGED PARAMS')
                     self.merged_params = task_vector_dict
                     for k in self.merged_params:
                         self.merged_params[k].data *= 0
-                else:
-                    for k in task_vector_dict:
-                        self.merged_params[k].data += task_vector_dict[k].data * 0
+                        print(self.merged_params[k]) #TODO DA ELIMINARE SE FUNCHIA
 
         elif self.args.test_0_shot:
             print("Testing 0-shot so i'm doing nothing.")
